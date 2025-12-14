@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(python test_ocr.py:*)",
+      "Bash(python:*)"
+    ]
+  }
+}

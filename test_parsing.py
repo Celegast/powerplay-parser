@@ -57,22 +57,46 @@ def test_parsing():
 
         total_tests += 1
 
-        # Extract the raw OCR text from the file
+        # Extract the PARSED DATA from the file (already processed with hybrid approach)
         with open(ocr_text_file, 'r', encoding='utf-8') as f:
             content = f.read()
-            # Extract just the raw OCR text section
-            raw_text_start = content.find("RAW OCR TEXT:")
-            raw_text_end = content.find("PARSED DATA:")
-            if raw_text_start == -1 or raw_text_end == -1:
+            parsed_data_start = content.find("PARSED DATA:")
+            if parsed_data_start == -1:
                 continue
 
-            raw_text = content[raw_text_start:raw_text_end]
-            # Remove the header and separator lines
-            lines = raw_text.split('\n')
-            raw_text = '\n'.join(lines[2:])  # Skip "RAW OCR TEXT:" and "---" lines
+            parsed_section = content[parsed_data_start:]
+            lines = parsed_section.split('\n')
 
-        # Parse the text
-        info = ocr.parse_powerplay_info(raw_text)
+            # Extract parsed values from the file
+            info = {
+                'system_name': '',
+                'controlling_power': '',
+                'opposing_power': '',
+                'system_status': '',
+                'undermining_points': 0,
+                'reinforcing_points': 0,
+                'distance_ly': 0.0
+            }
+
+            for line in lines:
+                if 'System Name:' in line:
+                    info['system_name'] = line.split("'")[1] if "'" in line else ''
+                elif 'Controlling Power:' in line:
+                    info['controlling_power'] = line.split("'")[1] if "'" in line else ''
+                elif 'Opposing Power:' in line:
+                    info['opposing_power'] = line.split("'")[1] if "'" in line else ''
+                elif 'System Status:' in line:
+                    info['system_status'] = line.split("'")[1] if "'" in line else ''
+                elif 'Undermining Points:' in line:
+                    try:
+                        info['undermining_points'] = int(line.split(':')[1].strip())
+                    except:
+                        pass
+                elif 'Reinforcing Points:' in line:
+                    try:
+                        info['reinforcing_points'] = int(line.split(':')[1].strip())
+                    except:
+                        pass
 
         # Find matching system in correct data
         system_name = info['system_name']

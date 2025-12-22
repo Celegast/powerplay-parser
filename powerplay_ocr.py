@@ -76,6 +76,81 @@ class PowerplayOCR:
         # Convert to PIL Image
         return Image.fromarray(cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB))
 
+    def crop_powerplay_subsections(self, image_path):
+        """
+        Crop the Powerplay panel into subsections based on fixed layout
+        This improves OCR accuracy by processing each section independently
+
+        The layout is consistent:
+        - Header: System name, distance, last updated
+        - Status: System status (EXPLOITED, FORTIFIED, etc.)
+        - Power names: Opposing Powers and Controlling Power
+        - Control points: Undermining/Reinforcing numbers
+
+        Args:
+            image_path: Path to the image file (can be full screenshot or cropped panel)
+
+        Returns:
+            Dictionary of cropped PIL Images for each section
+        """
+        # First, get the cropped panel (or use it directly if already cropped)
+        img = cv2.imread(image_path)
+        if img is None:
+            raise ValueError(f"Could not load image: {image_path}")
+
+        height, width = img.shape[:2]
+
+        # If this looks like a full screenshot (aspect ratio > 1.5), crop to panel first
+        if width / height > 1.5:
+            pil_panel = self.crop_powerplay_panel(image_path)
+            img = cv2.cvtColor(np.array(pil_panel), cv2.COLOR_RGB2BGR)
+            height, width = img.shape[:2]
+
+        # Define subsection regions as percentages of panel height
+        # These are based on the fixed Elite Dangerous UI layout
+        subsections = {
+            'header': {
+                'top_pct': 0.0,
+                'bottom_pct': 0.20,
+                'description': 'System name, distance, last updated'
+            },
+            'status': {
+                'top_pct': 0.18,
+                'bottom_pct': 0.32,
+                'description': 'System status (EXPLOITED, FORTIFIED, etc.)'
+            },
+            'power_section': {
+                'top_pct': 0.32,
+                'bottom_pct': 0.60,
+                'description': 'Opposing Powers, Controlling Power, VS, power names'
+            },
+            'control_points': {
+                'top_pct': 0.50,
+                'bottom_pct': 0.64,
+                'description': 'UNDERMINING, REINFORCING, control points numbers'
+            },
+            'penalties': {
+                'top_pct': 0.64,
+                'bottom_pct': 0.78,
+                'description': 'System strength and frontline penalties'
+            }
+        }
+
+        cropped_sections = {}
+        for section_name, region in subsections.items():
+            top = int(height * region['top_pct'])
+            bottom = int(height * region['bottom_pct'])
+
+            # Crop this section
+            section_img = img[top:bottom, 0:width]
+
+            # Convert to PIL Image
+            cropped_sections[section_name] = Image.fromarray(
+                cv2.cvtColor(section_img, cv2.COLOR_BGR2RGB)
+            )
+
+        return cropped_sections
+
     def preprocess_image(self, image_path, method='enhanced', crop_panel=True):
         """
         Preprocess image for better OCR accuracy
@@ -172,7 +247,7 @@ class PowerplayOCR:
 
         return Image.fromarray(gray)
 
-    def extract_text(self, image_path, preprocess_method='upscale', crop_panel=True):
+    def extract_text(self, image_path, preprocess_method='upscale', crop_panel=True, use_subsections=False):
         """
         Extract text from image using OCR
 
@@ -180,10 +255,14 @@ class PowerplayOCR:
             image_path: Path to the image file
             preprocess_method: Preprocessing method ('enhanced', 'upscale', 'threshold', 'clahe', 'none')
             crop_panel: Whether to crop to powerplay panel first (default: True)
+            use_subsections: Whether to crop into subsections for better accuracy (default: False)
 
         Returns:
             Extracted text string
         """
+        if use_subsections:
+            return self.extract_text_subsections(image_path, preprocess_method=preprocess_method)
+
         if preprocess_method != 'none':
             image = self.preprocess_image(image_path, method=preprocess_method, crop_panel=crop_panel)
         else:
@@ -200,6 +279,161 @@ class PowerplayOCR:
         text = pytesseract.image_to_string(image, config=custom_config)
 
         return text
+
+    def extract_text_subsections(self, image_path, preprocess_method='upscale'):
+        """
+        Extract text by processing subsections independently
+        This improves OCR accuracy by focusing on specific UI regions
+
+        Args:
+            image_path: Path to the image file
+            preprocess_method: Preprocessing method to apply to each subsection
+
+        Returns:
+            Combined extracted text string with subsection markers
+        """
+        # Get subsections
+        subsections = self.crop_powerplay_subsections(image_path)
+
+        combined_text = []
+
+        for section_name, section_image in subsections.items():
+            # Save section to temp file for preprocessing
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                section_image.save(tmp.name)
+                temp_path = tmp.name
+
+            # Preprocess the subsection
+            if preprocess_method != 'none':
+                processed_img = self.preprocess_image(temp_path, method=preprocess_method, crop_panel=False)
+            else:
+                processed_img = section_image
+
+            # Choose PSM mode based on section
+            if section_name == 'header':
+                # Header has system name and info spread across multiple lines
+                psm = 6  # Single uniform block of text
+            elif section_name == 'power_section':
+                # Power section has a specific layout with avatars and text
+                psm = 3  # Fully automatic page segmentation (works best for this section)
+            elif section_name in ['control_points', 'penalties']:
+                # These have specific formats
+                psm = 6  # Single uniform block
+            else:
+                # Status and other sections
+                psm = 6  # Single uniform block
+
+            custom_config = f'--oem 1 --psm {psm} --dpi 300'
+            section_text = pytesseract.image_to_string(processed_img, config=custom_config)
+
+            # Add section marker
+            combined_text.append(f"[{section_name.upper()}]")
+            combined_text.append(section_text.strip())
+
+            # Clean up temp file
+            import os
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+
+        return '\n'.join(combined_text)
+
+    def extract_text_hybrid(self, image_path, preprocess_method='upscale'):
+        """
+        Hybrid approach: Use regular OCR for most fields, subsection OCR for problematic sections
+        This achieves the best of both worlds - high overall accuracy with targeted improvements
+
+        Args:
+            image_path: Path to the image file
+            preprocess_method: Preprocessing method to use
+
+        Returns:
+            Dictionary with extracted and parsed powerplay information
+        """
+        # Step 1: Try regular OCR first (best for system name, status, numbers)
+        text_regular = self.extract_text(image_path, preprocess_method=preprocess_method,
+                                        crop_panel=False, use_subsections=False)
+        info = self.parse_powerplay_info(text_regular)
+
+        # Step 1b: If system name is missing, try header subsection
+        if not info['system_name']:
+            subsections = self.crop_powerplay_subsections(image_path)
+            header_section = subsections['header']
+
+            import tempfile
+            import os
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                header_section.save(tmp.name)
+                temp_path = tmp.name
+
+            processed = self.preprocess_image(temp_path, method=preprocess_method, crop_panel=False)
+            custom_config = r'--oem 1 --psm 6 --dpi 300'
+            header_text = pytesseract.image_to_string(processed, config=custom_config)
+            header_info = self.parse_powerplay_info(header_text)
+
+            if header_info['system_name']:
+                info['system_name'] = header_info['system_name']
+
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+
+        # Step 2: If power name is missing, use subsection OCR for power_section
+        if not (info['controlling_power'] or info['opposing_power']):
+            subsections = self.crop_powerplay_subsections(image_path)
+            power_section = subsections['power_section']
+
+            # Save to temp file for preprocessing
+            import tempfile
+            import os
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                power_section.save(tmp.name)
+                temp_path = tmp.name
+
+            # Preprocess and OCR with PSM 3 (best for power section)
+            processed = self.preprocess_image(temp_path, method=preprocess_method, crop_panel=False)
+            custom_config = r'--oem 1 --psm 3 --dpi 300'
+            power_text = pytesseract.image_to_string(processed, config=custom_config)
+            power_info = self.parse_powerplay_info(power_text)
+
+            # Use power names from subsection
+            if power_info['controlling_power'] or power_info['opposing_power']:
+                info['controlling_power'] = power_info['controlling_power']
+                info['opposing_power'] = power_info['opposing_power']
+
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+
+        # Step 3: If status is missing, try subsection OCR for status section
+        if not info['system_status']:
+            subsections = self.crop_powerplay_subsections(image_path)
+            status_section = subsections['status']
+
+            import tempfile
+            import os
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                status_section.save(tmp.name)
+                temp_path = tmp.name
+
+            processed = self.preprocess_image(temp_path, method=preprocess_method, crop_panel=False)
+            custom_config = r'--oem 1 --psm 6 --dpi 300'
+            status_text = pytesseract.image_to_string(processed, config=custom_config)
+            status_info = self.parse_powerplay_info(status_text)
+
+            if status_info['system_status']:
+                info['system_status'] = status_info['system_status']
+
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+
+        return info
 
     def parse_powerplay_info(self, text):
         """
@@ -303,7 +537,24 @@ class PowerplayOCR:
             # Skip if already found a status
             if not info['system_status']:
                 for status in status_keywords:
-                    if status in line_upper and not any(x in line_upper for x in ['PENALTY', 'POINTS']):
+                    # Fuzzy match for OCR errors like "=XPLOITED" for "EXPLOITED"
+                    # Check if most characters match (allow 1-2 char differences)
+                    fuzzy_match = False
+                    if status in line_upper:
+                        fuzzy_match = True
+                    else:
+                        # Try fuzzy match: check if status appears with chars substituted
+                        # Remove special characters first (handles "=XPLOITED" → "XPLOITED")
+                        cleaned_line = re.sub(r'[^A-Z\s]', '', line_upper)
+                        for word in cleaned_line.split():
+                            if len(word) >= len(status) - 2 and len(word) <= len(status) + 2:
+                                # Count matching characters at same positions
+                                matches = sum(1 for a, b in zip(word, status) if a == b)
+                                if matches >= len(status) - 2:  # Allow up to 2 mismatches
+                                    fuzzy_match = True
+                                    break
+
+                    if fuzzy_match and not any(x in line_upper for x in ['PENALTY', 'POINTS']):
                         # Check if it's a standalone status (possibly with checkbox markers and extra chars)
                         # Remove common prefixes and separators
                         cleaned = line_stripped
@@ -354,9 +605,13 @@ class PowerplayOCR:
 
             # Check if this line has a power first name or last name
             line_upper = line.upper()
-            for j, first_name in enumerate(power_first_names):
-                last_name = power_last_names[j]
 
+            # Sort power pairs by last name length (longest first) to avoid substring matches
+            # e.g., LAVIGNY-DUVAL before DUVAL
+            power_pairs = list(zip(power_first_names, power_last_names))
+            power_pairs_sorted = sorted(power_pairs, key=lambda x: len(x[1]), reverse=True)
+
+            for first_name, last_name in power_pairs_sorted:
                 # Check for last name only (handles cases where OCR misses first name)
                 # Use word boundary to ensure we match complete last names
                 if re.search(r'\b' + re.escape(last_name) + r'\b', line_upper):
@@ -378,8 +633,10 @@ class PowerplayOCR:
                     break
 
                 # Check for abbreviated first name (e.g., "A.LAVIGNY-DUVAL", "Z.TORVAL")
+                # Also handle OCR errors like "ALAVIGNY-DUVAL" (missing period)
                 abbreviated_name = f"{first_name[0]}.{last_name}"
-                if abbreviated_name in line_upper:
+                abbreviated_no_period = f"{first_name[0]}{last_name}"  # OCR might miss the period
+                if abbreviated_name in line_upper or abbreviated_no_period in line_upper:
                     power_name = f"{first_name} {last_name}".title()
                     # Determine if opposing or controlling based on context
                     # Look both before AND after (up to 5 lines in each direction) to handle OCR inconsistencies

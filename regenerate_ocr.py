@@ -20,10 +20,12 @@ def regenerate_ocr_for_captures():
 
         print(f"Processing capture #{i}...", end=' ')
 
-        # Extract text with threshold preprocessing (best results from testing)
-        # Note: We need to pass crop_panel=False because the image is already cropped
-        text = ocr.extract_text(cropped_path, preprocess_method='threshold', crop_panel=False)
-        info = ocr.parse_powerplay_info(text)
+        # Extract using hybrid approach (best results - 100% success target)
+        # This uses regular OCR + subsection fallback for problematic fields
+        info = ocr.extract_text_hybrid(cropped_path, preprocess_method='upscale')
+
+        # Also get the raw text for debugging
+        text = ocr.extract_text(cropped_path, preprocess_method='upscale', crop_panel=False, use_subsections=False)
 
         # Save to OCR text file
         ocr_text_path = f"live_demo_debug/ocr_text/capture_{capture_num}.txt"

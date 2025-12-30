@@ -123,18 +123,27 @@ def main():
             screenshot_path = ocr.take_screenshot()
 
             print(f"  -> Parsing Powerplay information...")
-            info = ocr.extract_powerplay_subsections_optimized(screenshot_path)
+            info = ocr.extract_powerplay_auto(screenshot_path)
 
             # Get raw text for debug
             text = ocr.extract_text(screenshot_path, preprocess_method='upscale', crop_panel=False, use_subsections=False)
 
+            # Determine if this is a competitive state
+            is_competitive = 'powers' in info and info['powers']
+
             # Save cropped panel
-            cropped_img = ocr.crop_powerplay_panel(screenshot_path)
+            if is_competitive:
+                cropped_img = ocr.crop_powerplay_panel(screenshot_path, extended=True)
+            else:
+                cropped_img = ocr.crop_powerplay_panel(screenshot_path, extended=False)
             cropped_path = f"auto_capture_debug/cropped/capture_{i:03d}.png"
             cropped_img.save(cropped_path)
 
             # Save subsections
-            subsections = ocr.crop_powerplay_subsections(screenshot_path)
+            if is_competitive:
+                subsections = ocr.crop_powerplay_subsections_competitive(screenshot_path)
+            else:
+                subsections = ocr.crop_powerplay_subsections(screenshot_path)
             for section_name, section_img in subsections.items():
                 subsection_path = f"auto_capture_debug/subsections/capture_{i:03d}_{section_name}.png"
                 section_img.save(subsection_path)
@@ -163,9 +172,17 @@ def main():
 
                 print(f"  -> Parsed:")
                 print(f"     System: {parsed_name}")
-                print(f"     Power: {info['controlling_power'] or info['opposing_power']}")
                 print(f"     Status: {info['system_status']}")
-                print(f"     CP: {info['undermining_points']} / {info['reinforcing_points']}")
+
+                if is_competitive:
+                    print(f"     Type: COMPETITIVE")
+                    for power_info in info.get('powers', []):
+                        rank = power_info.get('rank', '?')
+                        print(f"       {rank}. {power_info['name']}: {power_info['score']:,}")
+                else:
+                    print(f"     Type: STANDARD")
+                    print(f"     Power: {info['controlling_power'] or info['opposing_power']}")
+                    print(f"     CP: {info['undermining_points']} / {info['reinforcing_points']}")
 
                 # Save to collected systems
                 collected_systems[parsed_name] = info

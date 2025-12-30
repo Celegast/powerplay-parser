@@ -8,6 +8,7 @@ import pyautogui
 import time
 import os
 import winsound
+import random
 
 def play_success_sound():
     """Play a success sound (high beep)"""
@@ -24,28 +25,41 @@ def play_error_sound():
         print('\a\a')
 
 def click_and_paste(x, y, text):
-    """Click at coordinates and type text"""
+    """
+    Click at coordinates and type text with randomized movement and timing
+
+    Adds natural variation to mouse movements and delays:
+    - X position: +/- 10 pixels
+    - Y position: +/- 5 pixels
+    - Delays: 0.2 to 1.0 seconds
+    """
+    # Add randomness to coordinates
+    x_offset = random.randint(-10, 10)
+    y_offset = random.randint(-5, 5)
+
     # Click on the input field using mouseDown/mouseUp
-    pyautogui.moveTo(x, y)
-    time.sleep(0.1)
+    pyautogui.moveTo(x + x_offset, y + y_offset)
+    time.sleep(random.uniform(0.2, 1.0))
     pyautogui.mouseDown()
-    time.sleep(0.1)
+    time.sleep(random.uniform(0.2, 1.0))
     pyautogui.mouseUp()
-    time.sleep(0.3)
+    time.sleep(random.uniform(0.2, 1.0))
 
     # Clear existing text with backspace
     pyautogui.press('backspace')
-    time.sleep(0.2)
+    time.sleep(random.uniform(0.2, 1.0))
 
     # Type the text directly (slower but more reliable)
     pyautogui.write(text, interval=0.05)
-    time.sleep(0.3)
+    time.sleep(random.uniform(0.2, 1.0))
 
-    # Click below to trigger search (move to y=204)
-    pyautogui.moveTo(x, 204)
-    time.sleep(0.1)
+    # Click below to trigger search (move to y=204 with randomness)
+    x_offset = random.randint(-10, 10)
+    y_offset = random.randint(-5, 5)
+    pyautogui.moveTo(x + x_offset, 204 + y_offset)
+    time.sleep(random.uniform(0.2, 1.0))
     pyautogui.mouseDown()
-    time.sleep(0.1)
+    time.sleep(random.uniform(0.2, 1.0))
     pyautogui.mouseUp()
 
 def main():

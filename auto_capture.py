@@ -369,9 +369,9 @@ def main():
                 # Save to collected systems
                 collected_systems[parsed_name] = info
 
-                # Append to output file
+                # Append to output file (use original system name from input.txt)
                 with open(output_file, 'a', encoding='utf-8') as f:
-                    excel_line = ocr.format_for_excel(info)
+                    excel_line = ocr.format_for_excel(info, original_system_name=system_name)
                     f.write(excel_line + '\n')
 
                 print(f"  -> [OK] Data saved!")
@@ -417,8 +417,18 @@ def main():
     if collected_systems:
         print("\nSystem Name\tPower\tState\t\tUndermining\tReinforcement")
         print("-" * 80)
-        for system_name in sorted(collected_systems.keys()):
-            excel_line = ocr.format_for_excel(collected_systems[system_name])
+        for parsed_name in sorted(collected_systems.keys()):
+            info = collected_systems[parsed_name]
+            # Find the original system name from input.txt by matching the parsed name
+            # Since we stored by parsed_name but want to display original name
+            original_name = parsed_name  # Use parsed name as fallback
+            for input_system_name in system_names:
+                # Fuzzy match to find the original name
+                from difflib import SequenceMatcher
+                if SequenceMatcher(None, input_system_name.upper(), parsed_name.upper()).ratio() >= 0.7:
+                    original_name = input_system_name
+                    break
+            excel_line = ocr.format_for_excel(info, original_system_name=original_name)
             print(excel_line)
         print("=" * 80)
         print(f"\nData saved to: {output_file}")

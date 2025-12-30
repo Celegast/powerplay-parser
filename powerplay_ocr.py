@@ -1792,7 +1792,7 @@ class PowerplayOCR:
 
             return True
 
-    def format_for_excel(self, info):
+    def format_for_excel(self, info, original_system_name=None):
         """
         Format parsed data as tab-separated values for Excel
 
@@ -1806,6 +1806,7 @@ class PowerplayOCR:
 
         Args:
             info: Dictionary with parsed powerplay information
+            original_system_name: Optional original system name from input (preferred over OCR'd name)
 
         Returns:
             Tab-separated string
@@ -1813,7 +1814,8 @@ class PowerplayOCR:
         # Check if this is a competitive state (has 'powers' list)
         if 'powers' in info and info['powers']:
             # Competitive state - map to Excel format
-            system_name = info.get('system_name', '')
+            # Use original system name if provided, otherwise use OCR'd name
+            system_name = original_system_name if original_system_name else info.get('system_name', '')
 
             # Find 1st and 2nd ranked powers
             power_1st = None
@@ -1835,13 +1837,15 @@ class PowerplayOCR:
         else:
             # Standard state - original format
             # Columns: System Name, Power, State, (empty), Undermining, Reinforcement
+            # Use original system name if provided, otherwise use OCR'd name
+            system_name = original_system_name if original_system_name else info.get('system_name', '')
             power = info.get('controlling_power', '') or info.get('opposing_power', '') or ''
             state = info.get('system_status', '') or ''
             # Note: 0 is a valid value, so use >= 0 check
             undermining = str(info['undermining_points']) if info.get('undermining_points', -1) >= 0 else ''
             reinforcement = str(info['reinforcing_points']) if info.get('reinforcing_points', -1) >= 0 else ''
 
-            return f"{info['system_name']}\t{power}\t{state}\t\t{undermining}\t{reinforcement}"
+            return f"{system_name}\t{power}\t{state}\t\t{undermining}\t{reinforcement}"
 
     def start_continuous_monitoring(self, hotkey='f9', check_interval=2.0, output_file='powerplay_data.txt'):
         """

@@ -9,6 +9,8 @@ import time
 import os
 import winsound
 import random
+import ctypes
+from ctypes import wintypes
 
 def play_success_sound():
     """Play a success sound (high beep)"""
@@ -24,7 +26,168 @@ def play_error_sound():
     except:
         print('\a\a')
 
-def click_and_paste(x, y, text):
+def find_and_click_system_in_dropdown(search_x, search_y, system_name, debug_index=0):
+    """
+    Find the correct system in the dropdown list using OCR and click it
+
+    Args:
+        search_x: X coordinate of search field
+        search_y: Y coordinate of search field
+        system_name: The exact system name to find
+        debug_index: Index for debug file naming
+
+    Returns:
+        True if found and clicked, False otherwise
+    """
+    import pytesseract
+    import cv2
+    import numpy as np
+    from PIL import Image
+
+    # Dropdown appears below the search field
+    # Approximate dropdown region (adjust based on your resolution)
+    # Search field is at (2700, 168), dropdown starts 10 pixels below
+    dropdown_left = search_x - 460
+    dropdown_top = search_y + 25
+    dropdown_width = 450
+    dropdown_height = 400  # Capture enough for ~10 results
+
+    # Take screenshot of dropdown area immediately (dropdown should already be visible)
+    screenshot = pyautogui.screenshot(region=(dropdown_left, dropdown_top, dropdown_width, dropdown_height))
+
+    # Save screenshot for debugging
+    debug_path = f"auto_capture_debug/dropdown/dropdown_{debug_index:03d}.png"
+    os.makedirs('auto_capture_debug/dropdown', exist_ok=True)
+    screenshot.save(debug_path)
+
+    # Preprocess image for better OCR accuracy
+    # Convert PIL to OpenCV format
+    img = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
+
+    # Upscale 2x (not 3x - was too large for OCR)
+    img = cv2.resize(img, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+
+    # Convert to grayscale
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # Elite Dangerous has orange/yellow text on dark background
+    # Use simple thresholding to isolate bright text
+    _, binary = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY)
+
+    # Very light morphological operations to clean up without distorting text
+    kernel = np.ones((1, 1), np.uint8)
+    cleaned = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+
+    # Save preprocessed image for debugging
+    preprocessed_path = f"auto_capture_debug/dropdown/dropdown_{debug_index:03d}_preprocessed.png"
+    cv2.imwrite(preprocessed_path, cleaned)
+
+    # Convert back to PIL for pytesseract
+    preprocessed_pil = Image.fromarray(cleaned)
+
+    # OCR the dropdown to find matching system names
+    # Try PSM 11 (sparse text, find as much text as possible)
+    text = pytesseract.image_to_string(
+        preprocessed_pil,
+        config='--oem 3 --psm 11'
+    )
+
+    # Save OCR text for debugging
+    ocr_debug_path = f"auto_capture_debug/dropdown/dropdown_{debug_index:03d}_ocr.txt"
+    with open(ocr_debug_path, 'w', encoding='utf-8') as f:
+        f.write(f"Looking for: {system_name}\n")
+        f.write("=" * 80 + "\n")
+        f.write("RAW OCR Result:\n")
+        f.write(text)
+        f.write("\n" + "=" * 80 + "\n")
+
+    # Split into lines and find the matching system
+    lines = [line.strip().upper() for line in text.split('\n') if line.strip()]
+
+    system_name_upper = system_name.upper()
+    match_index = -1
+    match_method = ""
+
+    # Write parsed lines to debug
+    with open(ocr_debug_path, 'a', encoding='utf-8') as f:
+        f.write("\nParsed Lines (filtered, uppercase):\n")
+        for i, line in enumerate(lines):
+            f.write(f"  [{i}] {line}\n")
+        f.write("\n" + "=" * 80 + "\n")
+
+    # First try exact match
+    for i, line in enumerate(lines):
+        if system_name_upper == line:
+            match_index = i
+            match_method = "exact match"
+            break
+
+    # If no exact match, try fuzzy matching using similarity ratio
+    if match_index < 0:
+        from difflib import SequenceMatcher
+        best_ratio = 0.0
+        best_index = -1
+
+        for i, line in enumerate(lines):
+            # Skip very short lines (likely noise)
+            if len(line) < 5:
+                continue
+
+            # Calculate similarity ratio
+            ratio = SequenceMatcher(None, system_name_upper, line).ratio()
+
+            # Keep track of best match
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_index = i
+
+        # Accept if similarity is at least 70%
+        if best_ratio >= 0.7 and best_index >= 0:
+            match_index = best_index
+            match_method = f"fuzzy match ({best_ratio:.1%})"
+
+    # Fallback: if no match found at all, use first valid line (skip very short ones)
+    if match_index < 0:
+        for i, line in enumerate(lines):
+            if len(line) >= 10:  # Must be at least 10 characters to be a system name
+                match_index = i
+                match_method = "fallback (first valid line)"
+                break
+
+    if match_index >= 0:
+        # Calculate click position
+        # Each line is approximately 30-40 pixels tall
+        line_height = 38
+        click_y = dropdown_top + (match_index * line_height) + (line_height // 2)
+        click_x = dropdown_left + (dropdown_width // 2)
+
+        # Save debug info about click position
+        with open(ocr_debug_path, 'a', encoding='utf-8') as f:
+            f.write(f"Match Method: {match_method}\n")
+            f.write(f"Matched at line [{match_index}]: {lines[match_index]}\n")
+            f.write(f"Click position: ({click_x}, {click_y})\n")
+            f.write(f"  dropdown_left={dropdown_left}, dropdown_top={dropdown_top}\n")
+            f.write(f"  match_index={match_index}, line_height={line_height}\n")
+
+        # Add randomness
+        click_x += random.randint(-10, 10)
+        click_y += random.randint(-5, 5)
+
+        # Click on the matched system - quick click to avoid route plotting
+        pyautogui.moveTo(click_x, click_y)
+        time.sleep(random.uniform(0.1, 0.2))
+        pyautogui.mouseDown()
+        time.sleep(random.uniform(0.05, 0.1))  # Very short press - just a quick tap
+        pyautogui.mouseUp()
+
+        # Small delay before moving mouse away
+        time.sleep(random.uniform(0.1, 0.2))
+
+        return True
+
+    return False
+
+def click_and_paste(x, y, text, debug_index=0):
     """
     Click at coordinates and type text with randomized movement and timing
 
@@ -51,16 +214,21 @@ def click_and_paste(x, y, text):
 
     # Type the text directly (slower but more reliable)
     pyautogui.write(text, interval=0.05)
-    time.sleep(random.uniform(0.2, 1.0))
 
-    # Click below to trigger search (move to y=204 with randomness)
-    x_offset = random.randint(-10, 10)
-    y_offset = random.randint(-5, 5)
-    pyautogui.moveTo(x + x_offset, 204 + y_offset)
-    time.sleep(random.uniform(0.2, 1.0))
-    pyautogui.mouseDown()
-    time.sleep(random.uniform(0.2, 1.0))
-    pyautogui.mouseUp()
+    # Wait for dropdown to appear and stabilize
+    time.sleep(1.2)  # Fixed delay to ensure dropdown is fully visible
+
+    # Find and click the exact system in the dropdown
+    if find_and_click_system_in_dropdown(x, y, text, debug_index):
+        print(f"  -> Found and clicked '{text}' in dropdown")
+    else:
+        print(f"  -> ERROR: Could not find '{text}' in dropdown")
+
+    # Move mouse back to search field
+    pyautogui.moveTo(x + x_offset, y + y_offset)
+
+    # Wait for the game to process and display system info
+    time.sleep(random.uniform(0.5, 1.0))
 
 def main():
     print("=" * 80)
@@ -126,7 +294,7 @@ def main():
         try:
             # Step 1-4: Click, paste, enter, wait
             print(f"  -> Searching for system...")
-            click_and_paste(SEARCH_X, SEARCH_Y, system_name)
+            click_and_paste(SEARCH_X, SEARCH_Y, system_name, i)
 
             # Wait for map to load and display system info
             print(f"  -> Waiting for map to load (3 seconds)...")

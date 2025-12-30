@@ -40,13 +40,15 @@ class PowerplayOCR:
         os.makedirs(self.screenshots_dir, exist_ok=True)
         os.makedirs(self.output_dir, exist_ok=True)
 
-    def crop_powerplay_panel(self, image_path):
+    def crop_powerplay_panel(self, image_path, extended=False):
         """
         Crop the Powerplay Information panel from the screenshot using exact coordinates
         For 5120x1440 resolution screenshots
 
         Args:
             image_path: Path to the image file
+            extended: If True, crop larger panel for EXPANSION/CONTESTED states (742×840)
+                     If False, crop standard panel for other states (740×646)
 
         Returns:
             Cropped PIL Image containing just the Powerplay panel
@@ -58,8 +60,9 @@ class PowerplayOCR:
         height, width = img.shape[:2]
 
         # Exact pixel coordinates for 5120x1440 resolution
-        # Panel location: upper-left (2916, 224), lower-right (3656, 870)
-        # For other resolutions, scale proportionally
+        # Panel location: upper-left (2916, 224)
+        # Standard: lower-right (3656, 870) -> 740×646
+        # Extended: lower-right (3658, 1064) -> 742×840
         expected_width = 5120
         expected_height = 1440
 
@@ -70,8 +73,15 @@ class PowerplayOCR:
         # Apply scaling to coordinates
         left = int(2916 * width_scale)
         top = int(224 * height_scale)
-        right = int(3656 * width_scale)
-        bottom = int(870 * height_scale)
+
+        if extended:
+            # Extended panel for EXPANSION/CONTESTED (742×840)
+            right = int(3658 * width_scale)
+            bottom = int(1064 * height_scale)
+        else:
+            # Standard panel (740×646)
+            right = int(3656 * width_scale)
+            bottom = int(870 * height_scale)
 
         # Crop the image
         cropped = img[top:bottom, left:right]
@@ -148,6 +158,134 @@ class PowerplayOCR:
                 'right': int(672 * width_scale),
                 'bottom': int(474 * height_scale),
                 'description': 'Both undermining and reinforcing control points'
+            }
+        }
+
+        cropped_sections = {}
+        for section_name, coords in subsections.items():
+            left = coords['left']
+            top = coords['top']
+            right = coords['right']
+            bottom = coords['bottom']
+
+            # Crop this section
+            section_img = img[top:bottom, left:right]
+
+            # Convert to PIL Image
+            cropped_sections[section_name] = Image.fromarray(
+                cv2.cvtColor(section_img, cv2.COLOR_BGR2RGB)
+            )
+
+        return cropped_sections
+
+    def crop_powerplay_subsections_competitive(self, image_path):
+        """
+        Crop the Powerplay panel into subsections for EXPANSION/CONTESTED states
+        Based on the extended cropped panel (742x840 pixels from full 5120x1440 screenshot)
+
+        Subsections (relative to extended cropped panel):
+        - system_name: (14, 56) - (552, 96)
+        - system_status: (14, 212) - (734, 272)
+        - power_1st_name: (106, 330) - (412, 360)
+        - power_1st_score: (416, 330) - (738, 360)
+        - power_2nd_name: (106, 464) - (412, 494)
+        - power_2nd_score: (416, 464) - (738, 494)
+        - power_your_name: (106, 692) - (412, 722)
+        - power_your_score: (416, 692) - (738, 722)
+        - power_your_rank: (108, 646) - (170, 674)
+
+        Args:
+            image_path: Path to the image file (can be full screenshot or extended cropped panel)
+
+        Returns:
+            Dictionary of cropped PIL Images for each section
+        """
+        # First, get the extended cropped panel (or use it directly if already cropped)
+        img = cv2.imread(image_path)
+        if img is None:
+            raise ValueError(f"Could not load image: {image_path}")
+
+        height, width = img.shape[:2]
+
+        # If this looks like a full screenshot (width > 2000), crop to extended panel first
+        if width > 2000:
+            pil_panel = self.crop_powerplay_panel(image_path, extended=True)
+            img = cv2.cvtColor(np.array(pil_panel), cv2.COLOR_RGB2BGR)
+            height, width = img.shape[:2]
+
+        # Expected extended panel dimensions
+        # Panel size: 742 width, 840 height
+        expected_panel_width = 742
+        expected_panel_height = 840
+
+        # Calculate scaling factors in case of different resolution
+        width_scale = width / expected_panel_width
+        height_scale = height / expected_panel_height
+
+        # Define subsection regions using exact pixel coordinates
+        subsections = {
+            'system_name': {
+                'left': int(14 * width_scale),
+                'top': int(56 * height_scale),
+                'right': int(552 * width_scale),
+                'bottom': int(96 * height_scale),
+                'description': 'System name line'
+            },
+            'system_status': {
+                'left': int(14 * width_scale),
+                'top': int(212 * height_scale),
+                'right': int(734 * width_scale),
+                'bottom': int(272 * height_scale),
+                'description': 'System status description (wider for competitive states)'
+            },
+            'power_1st_name': {
+                'left': int(106 * width_scale),
+                'top': int(330 * height_scale),
+                'right': int(412 * width_scale),
+                'bottom': int(360 * height_scale),
+                'description': '1st power name'
+            },
+            'power_1st_score': {
+                'left': int(416 * width_scale),
+                'top': int(330 * height_scale),
+                'right': int(738 * width_scale),
+                'bottom': int(360 * height_scale),
+                'description': '1st power control score'
+            },
+            'power_2nd_name': {
+                'left': int(106 * width_scale),
+                'top': int(464 * height_scale),
+                'right': int(412 * width_scale),
+                'bottom': int(494 * height_scale),
+                'description': '2nd power name'
+            },
+            'power_2nd_score': {
+                'left': int(416 * width_scale),
+                'top': int(464 * height_scale),
+                'right': int(738 * width_scale),
+                'bottom': int(494 * height_scale),
+                'description': '2nd power control score'
+            },
+            'power_your_name': {
+                'left': int(106 * width_scale),
+                'top': int(692 * height_scale),
+                'right': int(412 * width_scale),
+                'bottom': int(722 * height_scale),
+                'description': 'Your power name'
+            },
+            'power_your_score': {
+                'left': int(416 * width_scale),
+                'top': int(692 * height_scale),
+                'right': int(738 * width_scale),
+                'bottom': int(722 * height_scale),
+                'description': 'Your power control score'
+            },
+            'power_your_rank': {
+                'left': int(108 * width_scale),
+                'top': int(646 * height_scale),
+                'right': int(170 * width_scale),
+                'bottom': int(674 * height_scale),
+                'description': 'Your power rank (1st, 2nd, 3rd)'
             }
         }
 
@@ -638,6 +776,355 @@ class PowerplayOCR:
                     pass
 
         return info
+
+    def extract_powerplay_competitive(self, image_path):
+        """
+        Extract powerplay data for EXPANSION/CONTESTED states using subsection coordinates
+        These states have a different layout with multiple competing powers
+
+        Args:
+            image_path: Path to screenshot (full or already cropped extended panel)
+
+        Returns:
+            Dictionary with extracted powerplay information including multiple powers
+        """
+        import tempfile
+        import os
+
+        # Get the exact subsections for competitive states
+        subsections = self.crop_powerplay_subsections_competitive(image_path)
+
+        info = {
+            'system_name': '',
+            'system_status': '',
+            'powers': [],  # List of (power_name, control_score, rank) tuples
+            'controlling_power': '',  # Will be the 1st ranked power
+            'opposing_power': '',     # Will be the 2nd ranked power
+            'your_power': '',
+            'your_rank': '',
+            'undermining_points': -1,  # Not applicable for competitive states
+            'reinforcing_points': -1   # Not applicable for competitive states
+        }
+
+        # Process system name section - same as standard states
+        if 'system_name' in subsections:
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                tmp_path = tmp.name
+                subsections['system_name'].save(tmp_path)
+
+            try:
+                # Try multiple methods to get best OCR result
+                for method in ['none', 'upscale', 'threshold']:
+                    text = pytesseract.image_to_string(
+                        self.preprocess_image(tmp_path, method=method, crop_panel=False),
+                        config='--oem 3 --psm 7 --dpi 300'
+                    ).strip().upper()
+
+                    # Extract just the system name (before LAST UPDATED)
+                    if 'LAST UPDATED' in text:
+                        name = text.split('LAST UPDATED')[0].strip()
+                    else:
+                        name = text
+
+                    # Clean up common OCR prefix noise
+                    for prefix in ['= ', '_ ', 'A ', 'V ', '> ', '- ', '| ']:
+                        if name.startswith(prefix):
+                            name = name[len(prefix):].strip()
+
+                    # Apply OCR error corrections
+                    name = re.sub(r'([A-Z])E-(\d)', r'\g<1>2-\2', name)
+                    name = re.sub(r'([A-Z])E(\d)', r'\1\2', name)
+                    name = re.sub(r'\bGE-', 'CE-', name)
+                    name = re.sub(r'\bGOL\b', 'COL', name)
+
+                    # Valid system name should be at least 3 characters
+                    if len(name) >= 3:
+                        info['system_name'] = name
+                        break
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
+
+        # Process status section - look for EXPANSION or CONTESTED
+        if 'system_status' in subsections:
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                tmp_path = tmp.name
+                subsections['system_status'].save(tmp_path)
+
+            try:
+                text = pytesseract.image_to_string(
+                    self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
+                    config='--oem 3 --psm 6 --dpi 300'
+                ).strip().upper()
+
+                # Check for competitive state keywords
+                # CONTESTED: "Contested systems have multiple Powers actively competing"
+                # EXPANSION: Systems being expanded into (may show in description)
+                # UNOCCUPIED: "Unoccupied systems have not been expanded into by any Power"
+                if 'CONTESTED' in text:
+                    info['system_status'] = 'CONTESTED'
+                elif 'EXPANSION' in text:
+                    info['system_status'] = 'EXPANSION'
+                elif 'UNOCCUPIED' in text:
+                    info['system_status'] = 'UNOCCUPIED'
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
+
+        # Process power sections - 1st, 2nd, and Your power
+        power_sections = [
+            ('power_1st_name', 'power_1st_score', 1),
+            ('power_2nd_name', 'power_2nd_score', 2),
+            ('power_your_name', 'power_your_score', None)  # Rank determined separately
+        ]
+
+        # Known power names for fuzzy matching
+        power_names = [
+            'ARISSA LAVIGNY-DUVAL', 'AISLING DUVAL', 'ZEMINA TORVAL',
+            'DENTON PATREUS', 'ZACHARY HUDSON', 'FELICIA WINTERS',
+            'EDMUND MAHON', 'LI YONG-RUI', 'PRANAV ANTAL',
+            'ARCHON DELAINE', 'YURI GROM', 'NAKATO KAINE', 'JEROME ARCHER'
+        ]
+
+        for name_key, score_key, rank in power_sections:
+            if name_key in subsections and score_key in subsections:
+                # Extract power name
+                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                    tmp_path = tmp.name
+                    subsections[name_key].save(tmp_path)
+
+                power_name = ''
+                try:
+                    text = pytesseract.image_to_string(
+                        self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
+                        config='--oem 3 --psm 6 --dpi 300'
+                    ).upper()
+
+                    # Match against known powers with fuzzy matching
+                    from difflib import SequenceMatcher
+                    best_match = None
+                    best_ratio = 0.7
+
+                    for power in power_names:
+                        if power in text:
+                            best_match = power
+                            break
+                        ratio = SequenceMatcher(None, text.replace('\n', ' '), power).ratio()
+                        if ratio > best_ratio:
+                            best_ratio = ratio
+                            best_match = power
+
+                    if best_match:
+                        power_name = best_match.title()
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except:
+                        pass
+
+                # Extract control score
+                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                    tmp_path = tmp.name
+                    subsections[score_key].save(tmp_path)
+
+                control_score = -1
+                try:
+                    # Try multiple methods for best accuracy on numbers
+                    for method in ['none', 'threshold', 'upscale']:
+                        text = pytesseract.image_to_string(
+                            self.preprocess_image(tmp_path, method=method, crop_panel=False),
+                            config='--oem 3 --psm 7 --dpi 300'
+                        ).strip()
+
+                        # Extract number (with or without commas)
+                        number_match = re.search(r'(\d{1,}(?:,\d{3})*)', text)
+                        if number_match:
+                            try:
+                                control_score = int(number_match.group(1).replace(',', ''))
+                                break
+                            except ValueError:
+                                pass
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except:
+                        pass
+
+                # Store power info
+                if power_name and control_score >= 0:
+                    if rank == 1:
+                        info['controlling_power'] = power_name
+                    elif rank == 2:
+                        info['opposing_power'] = power_name
+                    else:
+                        # This is "Your power"
+                        info['your_power'] = power_name
+
+                    info['powers'].append({
+                        'name': power_name,
+                        'score': control_score,
+                        'rank': rank
+                    })
+
+        # Process your power rank
+        if 'power_your_rank' in subsections:
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                tmp_path = tmp.name
+                subsections['power_your_rank'].save(tmp_path)
+
+            try:
+                # Try multiple PSM modes and preprocessing methods
+                best_rank = ''
+
+                for psm in [8, 7, 13]:  # PSM 8=single word, 7=single line, 13=raw line
+                    for method in ['none', 'threshold', 'upscale']:
+                        text = pytesseract.image_to_string(
+                            self.preprocess_image(tmp_path, method=method, crop_panel=False),
+                            config=f'--oem 3 --psm {psm} --dpi 300'
+                        ).strip().upper()
+
+                        # Look for rank indicators: 1ST, 2ND, 3RD, 4TH, 5TH, etc.
+                        rank_match = re.search(r'(\d+)(ST|ND|RD|TH)', text)
+                        if rank_match:
+                            rank_num = rank_match.group(1)
+                            rank_suffix = rank_match.group(2).lower()
+                            best_rank = f"{rank_num}{rank_suffix}"
+                            break
+
+                        # Check for common OCR errors: "Sth" or "oth" for "5th"
+                        if text in ['STH', 'OTH', 'STI']:
+                            best_rank = '5th'
+                            break
+                        elif text in ['1ST', 'IST']:
+                            best_rank = '1st'
+                            break
+                        elif text in ['2ND']:
+                            best_rank = '2nd'
+                            break
+                        elif text in ['3RD']:
+                            best_rank = '3rd'
+                            break
+                        elif text in ['4TH']:
+                            best_rank = '4th'
+                            break
+
+                        # Fallback: just a digit
+                        digit_match = re.search(r'\b([1-9])\b', text)
+                        if digit_match:
+                            digit = digit_match.group(1)
+                            if digit == '1':
+                                best_rank = '1st'
+                            elif digit == '2':
+                                best_rank = '2nd'
+                            elif digit == '3':
+                                best_rank = '3rd'
+                            else:
+                                best_rank = f"{digit}th"
+                            break
+
+                    if best_rank:
+                        break
+
+                info['your_rank'] = best_rank
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
+
+        return info
+
+    def extract_powerplay_auto(self, image_path):
+        """
+        Automatically detect state type and extract powerplay data using the appropriate parser
+
+        This method:
+        1. Detects whether the system is in a standard state (EXPLOITED/FORTIFIED/STRONGHOLD)
+           or competitive state (CONTESTED/EXPANSION/UNOCCUPIED)
+        2. Routes to the appropriate extraction method
+        3. Returns unified data structure
+
+        Args:
+            image_path: Path to screenshot (full or cropped panel)
+
+        Returns:
+            Dictionary with extracted powerplay information
+        """
+        import tempfile
+        import os
+
+        # Strategy: Peek at status text to detect state type
+        # Competitive states: CONTESTED, EXPANSION, UNOCCUPIED
+        # Standard states: EXPLOITED, FORTIFIED, STRONGHOLD
+
+        img = cv2.imread(image_path)
+        if img is None:
+            raise ValueError(f"Could not load image: {image_path}")
+
+        height, width = img.shape[:2]
+
+        try:
+            # Crop status description region to check for keywords
+            if width > 2000:
+                # Full screenshot - crop to status region
+                # Status is at roughly (2916+14, 224+212) to (2916+734, 224+280)
+                width_scale = width / 5120
+                height_scale = height / 1440
+
+                left = int((2916 + 14) * width_scale)
+                top = int((224 + 212) * height_scale)
+                right = int((2916 + 734) * width_scale)
+                bottom = int((224 + 280) * height_scale)
+
+                status_region = img[top:bottom, left:right]
+            else:
+                # Already cropped panel - get status region
+                if height < 700:
+                    # Standard panel dimensions
+                    status_region = img[212:280, 14:424]
+                else:
+                    # Extended panel dimensions
+                    status_region = img[212:272, 14:734]
+
+            # Quick OCR of status region
+            status_pil = Image.fromarray(cv2.cvtColor(status_region, cv2.COLOR_BGR2RGB))
+
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                tmp_path = tmp.name
+                status_pil.save(tmp_path)
+
+            status_text = pytesseract.image_to_string(
+                self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
+                config='--oem 3 --psm 6 --dpi 300'
+            ).upper()
+
+            try:
+                os.unlink(tmp_path)
+            except:
+                pass
+
+            # Detect competitive state keywords
+            is_competitive = any(kw in status_text for kw in ['CONTESTED', 'EXPANSION', 'UNOCCUPIED'])
+
+            if is_competitive:
+                return self.extract_powerplay_competitive(image_path)
+            else:
+                return self.extract_powerplay_subsections_optimized(image_path)
+
+        except Exception as e:
+            # Fallback: Try standard first, then competitive
+            try:
+                standard_info = self.extract_powerplay_subsections_optimized(image_path)
+                if self.is_valid_powerplay_data(standard_info):
+                    return standard_info
+            except:
+                pass
+
+            return self.extract_powerplay_competitive(image_path)
 
     def extract_text_hybrid(self, image_path, preprocess_method='upscale'):
         """
@@ -1266,9 +1753,7 @@ class PowerplayOCR:
     def is_valid_powerplay_data(self, info):
         """
         Check if parsed data contains valid powerplay information
-        All required fields must be present: System Name, Power, State, Undermining, Reinforcement
-
-        Note: 0 is a valid control point value (e.g., a system with 0 reinforcement points)
+        Handles both standard states (with undermining/reinforcing) and competitive states (with powers list)
 
         Args:
             info: Dictionary with parsed powerplay information
@@ -1276,28 +1761,48 @@ class PowerplayOCR:
         Returns:
             True if data appears valid, False otherwise
         """
-        # All required fields must be present
-        if not info['system_name']:
+        # All states must have system name
+        if not info.get('system_name'):
             return False
 
-        if not (info['controlling_power'] or info['opposing_power']):
+        # All states must have at least one power
+        if not (info.get('controlling_power') or info.get('opposing_power')):
             return False
 
-        if not info['system_status']:
+        # All states must have a status
+        if not info.get('system_status'):
             return False
 
-        # Note: 0 is a valid value for control points
-        if info['undermining_points'] < 0:
-            return False
+        # Check if this is a competitive state (has 'powers' list)
+        if 'powers' in info and info['powers']:
+            # Competitive state - validate powers data
+            # At least one power with valid score
+            valid_powers = [p for p in info['powers'] if p.get('name') and p.get('score', -1) >= 0]
+            if not valid_powers:
+                return False
+            return True
+        else:
+            # Standard state - validate control points
+            # Note: 0 is a valid value for control points
+            if info.get('undermining_points', -1) < 0:
+                return False
 
-        if info['reinforcing_points'] < 0:
-            return False
+            if info.get('reinforcing_points', -1) < 0:
+                return False
 
-        return True
+            return True
 
     def format_for_excel(self, info):
         """
         Format parsed data as tab-separated values for Excel
+
+        Handles both standard and competitive states:
+        - Standard states: Power, State, Undermining, Reinforcement as normal
+        - Competitive states:
+          * Power = 1st power name
+          * State = 2nd power name
+          * Undermining = 2nd power control points
+          * Reinforcement = 1st power control points
 
         Args:
             info: Dictionary with parsed powerplay information
@@ -1305,14 +1810,38 @@ class PowerplayOCR:
         Returns:
             Tab-separated string
         """
-        # Columns: System Name, Power, State, (empty), Undermining, Reinforcement
-        power = info['controlling_power'] or info['opposing_power'] or ''
-        state = info['system_status'] or ''
-        # Note: 0 is a valid value, so use >= 0 check
-        undermining = str(info['undermining_points']) if info['undermining_points'] >= 0 else ''
-        reinforcement = str(info['reinforcing_points']) if info['reinforcing_points'] >= 0 else ''
+        # Check if this is a competitive state (has 'powers' list)
+        if 'powers' in info and info['powers']:
+            # Competitive state - map to Excel format
+            system_name = info.get('system_name', '')
 
-        return f"{info['system_name']}\t{power}\t{state}\t\t{undermining}\t{reinforcement}"
+            # Find 1st and 2nd ranked powers
+            power_1st = None
+            power_2nd = None
+
+            for p in info['powers']:
+                if p.get('rank') == 1:
+                    power_1st = p
+                elif p.get('rank') == 2:
+                    power_2nd = p
+
+            # Format: System Name, 1st Power, 2nd Power, (empty), 2nd Score, 1st Score
+            power_col = power_1st.get('name', '') if power_1st else ''
+            state_col = power_2nd.get('name', '') if power_2nd else ''
+            undermining_col = str(power_2nd.get('score', '')) if power_2nd else ''
+            reinforcement_col = str(power_1st.get('score', '')) if power_1st else ''
+
+            return f"{system_name}\t{power_col}\t{state_col}\t\t{undermining_col}\t{reinforcement_col}"
+        else:
+            # Standard state - original format
+            # Columns: System Name, Power, State, (empty), Undermining, Reinforcement
+            power = info.get('controlling_power', '') or info.get('opposing_power', '') or ''
+            state = info.get('system_status', '') or ''
+            # Note: 0 is a valid value, so use >= 0 check
+            undermining = str(info['undermining_points']) if info.get('undermining_points', -1) >= 0 else ''
+            reinforcement = str(info['reinforcing_points']) if info.get('reinforcing_points', -1) >= 0 else ''
+
+            return f"{info['system_name']}\t{power}\t{state}\t\t{undermining}\t{reinforcement}"
 
     def start_continuous_monitoring(self, hotkey='f9', check_interval=2.0, output_file='powerplay_data.txt'):
         """

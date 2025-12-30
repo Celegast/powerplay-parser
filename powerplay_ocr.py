@@ -18,15 +18,20 @@ import time
 
 
 class PowerplayOCR:
-    def __init__(self, tesseract_path=None):
+    def __init__(self, tesseract_path=None, use_easyocr=True):
         """
         Initialize the OCR parser
 
         Args:
             tesseract_path: Path to tesseract executable (optional)
+            use_easyocr: Whether to enable EasyOCR as fallback (default: True)
         """
         if tesseract_path:
             pytesseract.pytesseract.tesseract_cmd = tesseract_path
+
+        # Initialize EasyOCR if enabled (lazy loading to save memory)
+        self.use_easyocr = use_easyocr
+        self._easyocr_reader = None
 
         self.screenshots_dir = "screenshots"
         self.output_dir = "extracted_data"
@@ -37,8 +42,8 @@ class PowerplayOCR:
 
     def crop_powerplay_panel(self, image_path):
         """
-        Crop the Powerplay Information panel from the screenshot
-        The panel is located on the right side of the screen, roughly right of center
+        Crop the Powerplay Information panel from the screenshot using exact coordinates
+        For 5120x1440 resolution screenshots
 
         Args:
             image_path: Path to the image file
@@ -52,23 +57,21 @@ class PowerplayOCR:
             raise ValueError(f"Could not load image: {image_path}")
         height, width = img.shape[:2]
 
-        # Powerplay panel is on the right side, roughly:
-        # - Starts around 48-50% from left (slightly before center to catch panel border)
-        # - Takes up about 50% of width
-        # - Vertically: Start higher to include status line, exclude bottom UI
+        # Exact pixel coordinates for 5120x1440 resolution
+        # Panel location: upper-left (2916, 224), lower-right (3656, 870)
+        # For other resolutions, scale proportionally
+        expected_width = 5120
+        expected_height = 1440
 
-        # Define crop region (as percentages of image dimensions)
-        # Adjusted to capture full Powerplay panel content without galaxy map noise
-        left_pct = 0.56
-        right_pct = 0.75
-        top_pct = 0.15    # Start below header
-        bottom_pct = 0.70 # End before bottom UI elements
+        # Calculate scaling factors
+        width_scale = width / expected_width
+        height_scale = height / expected_height
 
-        # Convert to pixel coordinates
-        left = int(width * left_pct)
-        right = int(width * right_pct)
-        top = int(height * top_pct)
-        bottom = int(height * bottom_pct)
+        # Apply scaling to coordinates
+        left = int(2916 * width_scale)
+        top = int(224 * height_scale)
+        right = int(3656 * width_scale)
+        bottom = int(870 * height_scale)
 
         # Crop the image
         cropped = img[top:bottom, left:right]
@@ -78,14 +81,15 @@ class PowerplayOCR:
 
     def crop_powerplay_subsections(self, image_path):
         """
-        Crop the Powerplay panel into subsections based on fixed layout
-        This improves OCR accuracy by processing each section independently
+        Crop the Powerplay panel into subsections using exact pixel coordinates
+        Based on the cropped panel coordinates (740x646 pixels from full 5120x1440 screenshot)
 
-        The layout is consistent:
-        - Header: System name, distance, last updated
-        - Status: System status (EXPLOITED, FORTIFIED, etc.)
-        - Power names: Opposing Powers and Controlling Power
-        - Control points: Undermining/Reinforcing numbers
+        Subsections (relative to cropped panel):
+        - system_name: (14, 56) - (552, 96)
+        - system_status: (14, 212) - (424, 280)
+        - controlling_power: (528, 360) - (714, 410)
+        - undermining: (70, 446) - (260, 474)
+        - reinforcing: (480, 446) - (672, 474)
 
         Args:
             image_path: Path to the image file (can be full screenshot or cropped panel)
@@ -100,49 +104,62 @@ class PowerplayOCR:
 
         height, width = img.shape[:2]
 
-        # If this looks like a full screenshot (aspect ratio > 1.5), crop to panel first
-        if width / height > 1.5:
+        # If this looks like a full screenshot (width > 2000), crop to panel first
+        if width > 2000:
             pil_panel = self.crop_powerplay_panel(image_path)
             img = cv2.cvtColor(np.array(pil_panel), cv2.COLOR_RGB2BGR)
             height, width = img.shape[:2]
 
-        # Define subsection regions as percentages of panel height
-        # These are based on the fixed Elite Dangerous UI layout
+        # Expected panel dimensions after cropping from 5120x1440
+        # Panel size: 3656-2916 = 740 width, 870-224 = 646 height
+        expected_panel_width = 740
+        expected_panel_height = 646
+
+        # Calculate scaling factors in case of different resolution
+        width_scale = width / expected_panel_width
+        height_scale = height / expected_panel_height
+
+        # Define subsection regions using exact pixel coordinates
         subsections = {
-            'header': {
-                'top_pct': 0.0,
-                'bottom_pct': 0.20,
-                'description': 'System name, distance, last updated'
+            'system_name': {
+                'left': int(14 * width_scale),
+                'top': int(56 * height_scale),
+                'right': int(552 * width_scale),
+                'bottom': int(96 * height_scale),
+                'description': 'System name line'
             },
-            'status': {
-                'top_pct': 0.18,
-                'bottom_pct': 0.32,
-                'description': 'System status (EXPLOITED, FORTIFIED, etc.)'
+            'system_status': {
+                'left': int(14 * width_scale),
+                'top': int(212 * height_scale),
+                'right': int(424 * width_scale),
+                'bottom': int(280 * height_scale),
+                'description': 'System status with description'
             },
-            'power_section': {
-                'top_pct': 0.32,
-                'bottom_pct': 0.60,
-                'description': 'Opposing Powers, Controlling Power, VS, power names'
+            'controlling_power': {
+                'left': int(528 * width_scale),
+                'top': int(360 * height_scale),
+                'right': int(714 * width_scale),
+                'bottom': int(410 * height_scale),
+                'description': 'Controlling power name'
             },
             'control_points': {
-                'top_pct': 0.50,
-                'bottom_pct': 0.64,
-                'description': 'UNDERMINING, REINFORCING, control points numbers'
-            },
-            'penalties': {
-                'top_pct': 0.64,
-                'bottom_pct': 0.78,
-                'description': 'System strength and frontline penalties'
+                'left': int(70 * width_scale),
+                'top': int(446 * height_scale),
+                'right': int(672 * width_scale),
+                'bottom': int(474 * height_scale),
+                'description': 'Both undermining and reinforcing control points'
             }
         }
 
         cropped_sections = {}
-        for section_name, region in subsections.items():
-            top = int(height * region['top_pct'])
-            bottom = int(height * region['bottom_pct'])
+        for section_name, coords in subsections.items():
+            left = coords['left']
+            top = coords['top']
+            right = coords['right']
+            bottom = coords['bottom']
 
             # Crop this section
-            section_img = img[top:bottom, 0:width]
+            section_img = img[top:bottom, left:right]
 
             # Convert to PIL Image
             cropped_sections[section_name] = Image.fromarray(
@@ -340,6 +357,288 @@ class PowerplayOCR:
 
         return '\n'.join(combined_text)
 
+    def extract_text_easyocr(self, image_path, preprocess_method='upscale'):
+        """
+        Extract text using EasyOCR (deep learning-based OCR)
+        Use as fallback when Tesseract fails completely
+
+        Args:
+            image_path: Path to the image file
+            preprocess_method: Preprocessing method to use
+
+        Returns:
+            Extracted text string
+        """
+        if not self.use_easyocr:
+            return ""
+
+        # Lazy load EasyOCR reader
+        if self._easyocr_reader is None:
+            try:
+                import easyocr
+                self._easyocr_reader = easyocr.Reader(['en'], gpu=False)
+            except ImportError:
+                print("EasyOCR not installed. Install with: pip install easyocr")
+                return ""
+
+        # Preprocess image
+        if preprocess_method != 'none':
+            image = self.preprocess_image(image_path, method=preprocess_method, crop_panel=False)
+
+            # Save preprocessed image to temp file
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                image.save(tmp.name)
+                temp_path = tmp.name
+        else:
+            temp_path = image_path
+
+        # Run EasyOCR
+        try:
+            result = self._easyocr_reader.readtext(temp_path)
+
+            # Extract text from results
+            # EasyOCR returns list of (bbox, text, confidence)
+            texts = [text for (bbox, text, conf) in result]
+            combined_text = '\n'.join(texts)
+
+            # Clean up temp file
+            if temp_path != image_path:
+                try:
+                    import os
+                    os.remove(temp_path)
+                except:
+                    pass
+
+            return combined_text
+        except Exception as e:
+            print(f"EasyOCR error: {e}")
+            return ""
+
+    def extract_powerplay_subsections_optimized(self, image_path):
+        """
+        Extract powerplay data using exact subsection coordinates with optimized OCR per section
+        This is the most accurate method - processes each UI element independently
+
+        Args:
+            image_path: Path to screenshot (full or already cropped panel)
+
+        Returns:
+            Dictionary with extracted powerplay information
+        """
+        import tempfile
+        import os
+
+        # Get the exact subsections
+        subsections = self.crop_powerplay_subsections(image_path)
+
+        info = {
+            'system_name': '',
+            'controlling_power': '',
+            'opposing_power': '',
+            'system_status': '',
+            'undermining_points': -1,
+            'reinforcing_points': -1
+        }
+
+        # Process system name section - PSM 7 (single line), threshold for text clarity
+        if 'system_name' in subsections:
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                tmp_path = tmp.name
+                subsections['system_name'].save(tmp_path)
+
+            try:
+                # Try multiple methods to get best OCR result
+                candidates = []
+
+                for method in ['none', 'upscale', 'threshold']:
+                    text = pytesseract.image_to_string(
+                        self.preprocess_image(tmp_path, method=method, crop_panel=False),
+                        config='--oem 3 --psm 7 --dpi 300'
+                    ).strip().upper()
+
+                    # Extract just the system name (before LAST UPDATED)
+                    if 'LAST UPDATED' in text:
+                        name = text.split('LAST UPDATED')[0].strip()
+                    else:
+                        name = text
+
+                    # Clean up common OCR prefix noise
+                    for prefix in ['= ', '_ ', 'A ', 'V ', '> ', '- ', '| ']:
+                        if name.startswith(prefix):
+                            name = name[len(prefix):].strip()
+
+                    # Apply OCR error corrections
+                    # Fix common OCR misreads: DE -> D2, DE- -> D2-, GE -> CE
+                    name = re.sub(r'([A-Z])E-(\d)', r'\g<1>2-\2', name)  # DE-20 -> D2-20
+                    name = re.sub(r'([A-Z])E(\d)', r'\1\2', name)  # DE2 -> D2
+                    name = re.sub(r'\bGE-', 'CE-', name)  # GE-N -> CE-N
+                    name = re.sub(r'\bGOL\b', 'COL', name)  # GOL -> COL
+
+                    # Valid system name should be at least 3 characters
+                    # Can have "SECTOR" or be a simple name like "LTT 970"
+                    if len(name) >= 3:
+                        candidates.append(name)
+
+                # Pick the most common result, or the first valid one
+                if candidates:
+                    # Use the first candidate from 'none' or 'upscale' if available
+                    info['system_name'] = candidates[0]
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
+
+        # Process status section - look for status keyword in clean text
+        if 'system_status' in subsections:
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                tmp_path = tmp.name
+                subsections['system_status'].save(tmp_path)
+
+            try:
+                text = pytesseract.image_to_string(
+                    self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
+                    config='--oem 3 --psm 6 --dpi 300'
+                ).strip()
+
+                # Extract first word from description text
+                # "Exploited systems have..." -> "EXPLOITED"
+                first_word = text.split()[0].upper() if text else ''
+
+                status_keywords = ['STRONGHOLD', 'FORTIFIED', 'EXPLOITED', 'UNOCCUPIED']
+                if first_word in status_keywords:
+                    info['system_status'] = first_word
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
+
+        # Process controlling power section - PSM 6, upscale for text
+        if 'controlling_power' in subsections:
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                tmp_path = tmp.name
+                subsections['controlling_power'].save(tmp_path)
+
+            try:
+                text = pytesseract.image_to_string(
+                    self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
+                    config='--oem 3 --psm 6 --dpi 300'
+                ).upper()
+
+                # Known power names
+                power_names = [
+                    'ARISSA LAVIGNY-DUVAL', 'AISLING DUVAL', 'ZEMINA TORVAL',
+                    'DENTON PATREUS', 'ZACHARY HUDSON', 'FELICIA WINTERS',
+                    'EDMUND MAHON', 'LI YONG-RUI', 'PRANAV ANTAL',
+                    'ARCHON DELAINE', 'YURI GROM', 'NAKATO KAINE', 'JEROME ARCHER'
+                ]
+
+                # Match against known powers with fuzzy matching
+                from difflib import SequenceMatcher
+                best_match = None
+                best_ratio = 0.7
+
+                for power in power_names:
+                    if power in text:
+                        best_match = power
+                        break
+                    # Fuzzy match
+                    ratio = SequenceMatcher(None, text.replace('\n', ' '), power).ratio()
+                    if ratio > best_ratio:
+                        best_ratio = ratio
+                        best_match = power
+
+                if best_match:
+                    info['controlling_power'] = best_match.title()
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
+
+        # Process control points section - both undermining and reinforcing
+        if 'control_points' in subsections:
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                tmp_path = tmp.name
+                subsections['control_points'].save(tmp_path)
+
+            try:
+                # Try multiple preprocessing methods for best OCR accuracy
+                # 'upscale' sometimes misreads 9 as 8, so try 'none' and 'threshold' too
+                best_undermining = None
+                best_reinforcing = None
+
+                for method in ['none', 'threshold', 'upscale']:
+                    text_full = pytesseract.image_to_string(
+                        self.preprocess_image(tmp_path, method=method, crop_panel=False),
+                        config='--oem 3 --psm 7 --dpi 300'
+                    ).strip()
+
+                    # Try to split by "CONTROL POINTS" to separate the two numbers
+                    if 'CONTROL POINTS' in text_full.upper():
+                        parts = re.split(r'CONTROL\s+POINTS', text_full, flags=re.IGNORECASE)
+                        if len(parts) == 2:
+                            # Extract numbers from each part
+                            undermining_match = re.search(r'(\d{1,}(?:,\d{3})*)', parts[0])
+                            reinforcing_match = re.search(r'(\d{1,}(?:,\d{3})*)', parts[1])
+
+                            if undermining_match and best_undermining is None:
+                                try:
+                                    best_undermining = int(undermining_match.group(1).replace(',', ''))
+                                except ValueError:
+                                    pass
+
+                            if reinforcing_match and best_reinforcing is None:
+                                try:
+                                    best_reinforcing = int(reinforcing_match.group(1).replace(',', ''))
+                                except ValueError:
+                                    pass
+                            elif best_reinforcing is None and parts[1]:
+                                # If no reinforcing number found, check if the text contains "0" or similar
+                                # For EXPLOITED systems, reinforcing can be 0
+                                if '0' in parts[1] or len(parts[1].strip()) < 5:
+                                    best_reinforcing = 0
+
+                            # If we found both numbers, we can stop
+                            if best_undermining is not None and best_reinforcing is not None:
+                                break
+
+                # Set the best results found
+                if best_undermining is not None:
+                    info['undermining_points'] = best_undermining
+                if best_reinforcing is not None:
+                    info['reinforcing_points'] = best_reinforcing
+
+                # If still no results, try the fallback method
+                if info['undermining_points'] == -1:
+                    # Fallback: if no "CONTROL POINTS" found, try digit whitelist
+                    text = pytesseract.image_to_string(
+                        self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
+                        config='--oem 3 --psm 7 --dpi 300 -c tessedit_char_whitelist=0123456789, '
+                    ).strip()
+
+                    numbers = re.findall(r'(\d{1,}(?:,\d{3})*)', text)
+                    if len(numbers) >= 2:
+                        try:
+                            info['undermining_points'] = int(numbers[0].replace(',', ''))
+                            info['reinforcing_points'] = int(numbers[1].replace(',', ''))
+                        except ValueError:
+                            pass
+                    elif len(numbers) == 1:
+                        try:
+                            info['undermining_points'] = int(numbers[0].replace(',', ''))
+                        except ValueError:
+                            pass
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
+
+        return info
+
     def extract_text_hybrid(self, image_path, preprocess_method='upscale'):
         """
         Hybrid approach: Use regular OCR for most fields, subsection OCR for problematic sections
@@ -347,17 +646,32 @@ class PowerplayOCR:
 
         Args:
             image_path: Path to the image file
-            preprocess_method: Preprocessing method to use
+            preprocess_method: Preprocessing method to use (default 'upscale' for best overall accuracy)
 
         Returns:
             Dictionary with extracted and parsed powerplay information
         """
-        # Step 1: Try regular OCR first (best for system name, status, numbers)
+        # Step 1: Try regular OCR with primary method (upscale is best for numbers)
         text_regular = self.extract_text(image_path, preprocess_method=preprocess_method,
                                         crop_panel=False, use_subsections=False)
         info = self.parse_powerplay_info(text_regular)
 
-        # Step 1b: If system name is missing, try header subsection
+        # Step 1a: Try threshold method for system name (better for text characters)
+        # Threshold method is more accurate for distinguishing letters but worse for digits
+        # Always check threshold if we're using upscale as primary
+        if preprocess_method == 'upscale':
+            text_threshold = self.extract_text(image_path, preprocess_method='threshold',
+                                             crop_panel=False, use_subsections=False)
+            info_threshold = self.parse_powerplay_info(text_threshold)
+
+            # Use threshold system name if:
+            # 1. Upscale didn't find one, OR
+            # 2. Threshold found a different one (likely more accurate for letters)
+            if info_threshold['system_name'] and (not info['system_name'] or
+                                                  info_threshold['system_name'] != info['system_name']):
+                info['system_name'] = info_threshold['system_name']
+
+        # Step 1b: If system name is still missing, try header subsection
         if not info['system_name']:
             subsections = self.crop_powerplay_subsections(image_path)
             header_section = subsections['header']
@@ -433,6 +747,25 @@ class PowerplayOCR:
             except:
                 pass
 
+        # Step 4: EasyOCR fallback for severe failures
+        # If critical fields still missing, try EasyOCR on the whole panel
+        if not info['system_name'] or not (info['controlling_power'] or info['opposing_power']):
+            if self.use_easyocr:
+                easyocr_text = self.extract_text_easyocr(image_path, preprocess_method=preprocess_method)
+                easyocr_info = self.parse_powerplay_info(easyocr_text)
+
+                # Use EasyOCR results if they're better
+                if not info['system_name'] and easyocr_info['system_name']:
+                    info['system_name'] = easyocr_info['system_name']
+
+                if not (info['controlling_power'] or info['opposing_power']):
+                    if easyocr_info['controlling_power'] or easyocr_info['opposing_power']:
+                        info['controlling_power'] = easyocr_info['controlling_power']
+                        info['opposing_power'] = easyocr_info['opposing_power']
+
+                if not info['system_status'] and easyocr_info['system_status']:
+                    info['system_status'] = easyocr_info['system_status']
+
         return info
 
     def parse_powerplay_info(self, text):
@@ -498,18 +831,39 @@ class PowerplayOCR:
 
                 if powerplay_found:
                     # This line might be the system name
-                    # Remove common prefix characters like "_ ", "A ", etc.
+                    # Remove common prefix characters like "_ ", "A ", "= ", etc.
                     cleaned_line = line
-                    for prefix in ['_ ', 'A ', 'V ', '> ', '- ', '| ']:
+                    for prefix in ['= ', '_ ', 'A ', 'V ', '> ', '- ', '| ']:
                         if cleaned_line.startswith(prefix):
                             cleaned_line = cleaned_line[len(prefix):].strip()
 
                     # Extract system name (stops at LAST UPDATED or special chars)
-                    system_match = re.match(r'^([A-Z0-9][A-Z0-9\s\-]+?)(?:\s+LAST\s+UPDATED|[\s=,._]*$)', cleaned_line.upper())
+                    # Allow lowercase letters for OCR errors like "De2-16" instead of "DE2-16"
+                    system_match = re.match(r'^([A-Za-z0-9][A-Za-z0-9\s\-]+?)(?:\s+LAST\s+UPDATED|[\s=,._]*$)', cleaned_line, re.IGNORECASE)
                     if system_match and len(system_match.group(1).strip()) > 5:
                         # Make sure it's not just other text
-                        name = system_match.group(1).strip()
+                        name = system_match.group(1).strip().upper()  # Convert to uppercase
                         if not any(x in name for x in ['DISTANCE', 'MINUTES', 'EXPLOITED', 'FORTIFIED']):
+                            # Fix common OCR errors in Elite Dangerous system names
+                            # Pattern: Letters followed by digits should not have extra letters inserted
+                            # e.g., "DE2-16" should be "D2-16" (remove E before digit)
+                            #       "CB-1" should be "C5-1" (B looks like 5)
+
+                            # Fix pattern like "DE2" -> "D2", "CE5" -> "C5" (extra E before digit)
+                            name = re.sub(r'([A-Z])E(\d)', r'\1\2', name)
+
+                            # Fix common character confusions
+                            # In system codes, B is often misread 5, O is 0, etc.
+                            # But only fix in the suffix portion (after the last space/hyphen)
+                            parts = re.split(r'(\s+|-)', name)
+                            if len(parts) > 0:
+                                last_part = parts[-1]
+                                # Fix CB-X -> C5-X pattern (B after letter before hyphen)
+                                if re.match(r'^[A-Z]B-\d', last_part):
+                                    last_part = last_part.replace('B-', '5-', 1)
+                                    parts[-1] = last_part
+                                name = ''.join(parts)
+
                             info['system_name'] = name
 
             # Distance in light years
@@ -535,42 +889,58 @@ class PowerplayOCR:
             line_upper = line_stripped.upper()
 
             # Skip if already found a status
-            if not info['system_status']:
+            # Also skip if we've reached the legend or TUG OF WAR section
+            if not info['system_status'] and not any(x in line_upper for x in ['TUG OF WAR', 'OPPOSING POWERS', 'UNOCCUPIED EXPLOITED FORTIFIED STRONGHOLD']):
                 for status in status_keywords:
-                    # Fuzzy match for OCR errors like "=XPLOITED" for "EXPLOITED"
-                    # Check if most characters match (allow 1-2 char differences)
+                    # Fuzzy match for OCR errors like "=XPLOITED" for "EXPLOITED" or "VEXPLOTED" for "EXPLOITED"
+                    # Use difflib similarity for better matching
                     fuzzy_match = False
                     if status in line_upper:
                         fuzzy_match = True
                     else:
-                        # Try fuzzy match: check if status appears with chars substituted
+                        # Try fuzzy match using sequence similarity
                         # Remove special characters first (handles "=XPLOITED" → "XPLOITED")
+                        from difflib import SequenceMatcher
                         cleaned_line = re.sub(r'[^A-Z\s]', '', line_upper)
                         for word in cleaned_line.split():
                             if len(word) >= len(status) - 2 and len(word) <= len(status) + 2:
-                                # Count matching characters at same positions
-                                matches = sum(1 for a, b in zip(word, status) if a == b)
-                                if matches >= len(status) - 2:  # Allow up to 2 mismatches
+                                # Use similarity ratio (handles "VEXPLOTED" → "EXPLOITED")
+                                similarity = SequenceMatcher(None, word, status).ratio()
+                                if similarity > 0.75:
                                     fuzzy_match = True
                                     break
 
                     if fuzzy_match and not any(x in line_upper for x in ['PENALTY', 'POINTS']):
-                        # Check if it's a standalone status (possibly with checkbox markers and extra chars)
-                        # Remove common prefixes and separators
-                        cleaned = line_stripped
-                        # Remove prefixes like "| W ", "+ ", "Y ", "PY ", "= ", etc.
-                        # Use regex to remove any combination of special chars + optional letters/numbers + space at start
-                        cleaned = re.sub(r'^[|VvYyWwPp=\+\-_*.\s]+', '', cleaned).strip()
+                        # For fuzzy matches, check if the status keyword appears in the line
+                        # after removing special characters
+                        cleaned_line = re.sub(r'[^A-Z\s]', '', line_upper)
 
-                        # Also remove trailing characters and pipes
-                        cleaned = re.sub(r'[\s|]+$', '', cleaned)  # Remove trailing spaces and pipes
-                        for suffix in [' tt', ' oo', ' t', ' d']:
-                            if cleaned.endswith(suffix):
-                                cleaned = cleaned[:-len(suffix)].strip()
+                        # Skip description lines (e.g., "Exploited systems have a low control score and need a Fortified")
+                        # These have multiple lowercase words forming sentences
+                        # But allow lines like "Bm + STRONGHOLD |" which just have lowercase prefixes
+                        words_in_line = line_stripped.split()
+                        lowercase_words = [w for w in words_in_line if any(c.islower() for c in w) and len(w) > 3]
+                        if len(lowercase_words) >= 2:  # If 2+ substantial lowercase words, it's a description
+                            continue
 
-                        # Check if cleaned line matches the status keyword
-                        cleaned_upper = cleaned.upper()
-                        if cleaned_upper == status:
+                        # Check each word in the cleaned line
+                        found_status = False
+                        for word in cleaned_line.split():
+                            # Check if this word matches the status (exact or fuzzy)
+                            if word == status:
+                                found_status = True
+                                break
+                            # Fuzzy check using sequence similarity
+                            if len(word) >= len(status) - 2 and len(word) <= len(status) + 2:
+                                # Use difflib to calculate similarity ratio
+                                from difflib import SequenceMatcher
+                                similarity = SequenceMatcher(None, word, status).ratio()
+                                # Allow matches with >75% similarity (handles "VEXPLOTED" → "EXPLOITED")
+                                if similarity > 0.75:
+                                    found_status = True
+                                    break
+
+                        if found_status:
                             info['system_status'] = status
                             # Next line might be the description
                             if i + 1 < len(lines):
@@ -578,22 +948,26 @@ class PowerplayOCR:
                                 if next_line and len(next_line) > 20 and not any(kw in next_line.upper() for kw in ['TUG', 'WAR', 'OPPOSING', 'CONTROL', 'POWERPLAY']):
                                     info['status_description'] = next_line
                             break
-                        # Check if line starts with status keyword followed by " d ", " |", or similar OCR errors
-                        # (e.g., "Fortified d systems have...", "Fortified | systems have...")
-                        # Match against cleaned_upper - after upper(), single letter becomes uppercase too
-                        elif re.match(rf'^{status}\s+[A-Z|\s]', cleaned_upper):
-                            info['system_status'] = status
-                            # This line itself is the description
-                            if len(line_stripped) > 20:
-                                info['status_description'] = line_stripped
-                            break
-                        # Also check if the status keyword appears at the start or end of a multi-status line
-                        # (e.g., "UNOCCUPIED EXPLOITED FORTIFIED STRONGHOLD")
-                        elif status in cleaned_upper.split():
-                            # For multi-status lines, we need to determine which one applies
-                            # This typically appears at the bottom as a legend, not the actual status
-                            # So we skip these unless it's clearly the only word
-                            pass
+
+            # Fallback: If no status found yet, check description text patterns
+            # These descriptions are standardized and often more reliably OCR'd
+            if not info['system_status']:
+                line_lower = line.lower()
+                # EXPLOITED: "Exploited systems have a low control score and need a Fortified"
+                if 'exploited systems have a low control score' in line_lower or \
+                   ('exploited' in line_lower and 'low control score' in line_lower and 'fortified' in line_lower):
+                    info['system_status'] = 'EXPLOITED'
+                    info['status_description'] = line.strip()
+                # FORTIFIED: "Fortified systems have a high level of reinforcement and maintain control over nearby Exploited systems"
+                elif 'fortified systems have a high level of reinforcement' in line_lower or \
+                     ('fortified' in line_lower and 'high level of reinforcement' in line_lower and 'exploited' in line_lower):
+                    info['system_status'] = 'FORTIFIED'
+                    info['status_description'] = line.strip()
+                # STRONGHOLD: "Stronghold systems have a very high level of reinforcement"
+                elif 'stronghold systems have a very high' in line_lower or \
+                     ('stronghold' in line_lower and 'very high' in line_lower and 'reinforcement' in line_lower):
+                    info['system_status'] = 'STRONGHOLD'
+                    info['status_description'] = line.strip()
 
             # Power names (known Powerplay leaders)
             # Check for first and last names separately since they might be on different lines
@@ -695,10 +1069,9 @@ class PowerplayOCR:
             # Use word boundaries to avoid matching partial numbers from system names
             # IMPORTANT: This is the authoritative source - always use it if found, even if we already have values
             if 'CONTROL POINTS' in line.upper():
-                # Match: number (with optional commas), optional separator (including °, _, comma, unicode chars, etc.), CONTROL POINTS, optional separator, number
-                # But avoid matching numbers that are part of system names (e.g., "359 SECTOR")
-                # Use \S* to match any non-whitespace separator characters (handles �, y, etc.)
-                points_match = re.search(r'(\d{4,}(?:,\d{3})*)\s+\S*\s*CONTROL\s+POINTS\s+\S*\s*(\d{4,}(?:,\d{3})*)', line, re.IGNORECASE)
+                # Match: number (with optional commas), non-digit characters, CONTROL POINTS, non-digit characters, number
+                # More permissive - handles "ook 450051' CONTROL POINTS )) 587203" and other OCR noise
+                points_match = re.search(r'(\d{4,}(?:,\d{3})*)\D+CONTROL\s+POINTS\D+(\d{4,}(?:,\d{3})*)', line, re.IGNORECASE)
                 if points_match:
                     try:
                         info['undermining_points'] = int(points_match.group(1).replace(',', ''))
@@ -805,7 +1178,7 @@ class PowerplayOCR:
 
     def take_screenshot(self, region=None):
         """
-        Take a screenshot and save it
+        Take a screenshot and save it with validation
 
         Args:
             region: Tuple of (x, y, width, height) for partial screenshot
@@ -813,19 +1186,39 @@ class PowerplayOCR:
         Returns:
             Path to saved screenshot
         """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"powerplay_{timestamp}.png"
-        filepath = os.path.join(self.screenshots_dir, filename)
+        import time
 
-        if region:
-            screenshot = pyautogui.screenshot(region=region)
-        else:
-            screenshot = pyautogui.screenshot()
+        max_retries = 3
+        for attempt in range(max_retries):
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"powerplay_{timestamp}.png"
+            filepath = os.path.join(self.screenshots_dir, filename)
 
-        screenshot.save(filepath)
-        print(f"Screenshot saved: {filepath}")
+            try:
+                if region:
+                    screenshot = pyautogui.screenshot(region=region)
+                else:
+                    screenshot = pyautogui.screenshot()
 
-        return filepath
+                # Save with error handling
+                screenshot.save(filepath, 'PNG')
+
+                # Validate the saved file
+                import cv2
+                test_img = cv2.imread(filepath)
+                if test_img is None:
+                    raise Exception("Screenshot validation failed - image is empty")
+
+                print(f"Screenshot saved: {filepath}")
+                return filepath
+
+            except Exception as e:
+                print(f"Screenshot attempt {attempt + 1}/{max_retries} failed: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(0.2)  # Brief delay before retry
+                    continue
+                else:
+                    raise Exception(f"Failed to capture valid screenshot after {max_retries} attempts")
 
     def process_screenshot(self, screenshot_path):
         """

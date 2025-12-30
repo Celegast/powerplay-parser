@@ -5,10 +5,10 @@ from powerplay_ocr import PowerplayOCR
 import os
 
 def regenerate_ocr_for_captures():
-    """Regenerate OCR for all captures using upscale method"""
+    """Regenerate OCR for all captures using hybrid approach"""
     ocr = PowerplayOCR()
 
-    print("Regenerating OCR text files with 'upscale' preprocessing...")
+    print("Regenerating OCR text files with hybrid preprocessing...")
     print()
 
     for i in range(1, 13):
@@ -21,7 +21,7 @@ def regenerate_ocr_for_captures():
         print(f"Processing capture #{i}...", end=' ')
 
         # Extract using hybrid approach (best results - 100% success target)
-        # This uses regular OCR + subsection fallback for problematic fields
+        # This uses upscale for numbers + threshold for system names + subsection fallback
         info = ocr.extract_text_hybrid(cropped_path, preprocess_method='upscale')
 
         # Also get the raw text for debugging

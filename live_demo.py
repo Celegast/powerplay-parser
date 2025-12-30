@@ -48,6 +48,7 @@ if __name__ == "__main__":
     # Create directories for debug output
     os.makedirs('live_demo_debug/cropped', exist_ok=True)
     os.makedirs('live_demo_debug/ocr_text', exist_ok=True)
+    os.makedirs('live_demo_debug/subsections', exist_ok=True)
 
     # Initialize output file with header
     with open(output_file, 'w', encoding='utf-8') as f:
@@ -72,14 +73,22 @@ if __name__ == "__main__":
             # Take screenshot
             screenshot_path = ocr.take_screenshot()
 
-            # Extract and parse
-            text = ocr.extract_text(screenshot_path)
-            info = ocr.parse_powerplay_info(text)
+            # Extract and parse using optimized subsection method
+            info = ocr.extract_powerplay_subsections_optimized(screenshot_path)
 
-            # Save cropped image for verification
+            # Also get raw text for debug output
+            text = ocr.extract_text(screenshot_path, preprocess_method='upscale', crop_panel=False, use_subsections=False)
+
+            # Save cropped panel for verification
             cropped_img = ocr.crop_powerplay_panel(screenshot_path)
             cropped_path = f"live_demo_debug/cropped/capture_{capture_count:03d}.png"
             cropped_img.save(cropped_path)
+
+            # Save subsections for debugging
+            subsections = ocr.crop_powerplay_subsections(screenshot_path)
+            for section_name, section_img in subsections.items():
+                subsection_path = f"live_demo_debug/subsections/capture_{capture_count:03d}_{section_name}.png"
+                section_img.save(subsection_path)
 
             # Save OCR text for verification
             ocr_text_path = f"live_demo_debug/ocr_text/capture_{capture_count:03d}.txt"
@@ -98,7 +107,6 @@ if __name__ == "__main__":
                 f.write(f"  System Status: '{info['system_status']}'\n")
                 f.write(f"  Undermining Points: {info['undermining_points']}\n")
                 f.write(f"  Reinforcing Points: {info['reinforcing_points']}\n")
-                f.write(f"  Distance: {info['distance_ly']} LY\n")
 
             # Check if valid
             if ocr.is_valid_powerplay_data(info):
@@ -146,7 +154,7 @@ if __name__ == "__main__":
 
                     if response == 'y':
                         collected_systems[system_name] = info
-                        print("\n  ✓ ACCEPTED - Data saved!")
+                        print("\n  [OK] ACCEPTED - Data saved!")
                         play_success_sound()
 
                         # Save to file immediately
@@ -160,15 +168,15 @@ if __name__ == "__main__":
                             pass
 
                     elif response == 'n':
-                        print("\n  ✗ REJECTED - Data discarded")
+                        print("\n  [SKIP] REJECTED - Data discarded")
                         play_error_sound()
                         # Keep both screenshots and debug files for review
 
                     elif response == 'r':
-                        print("\n  ⟳ RETRY - Please press F9 again")
+                        print("\n  [RETRY] RETRY - Please press F9 again")
                         # Keep files for comparison
                 else:
-                    print(f"\n  ⚠ DUPLICATE: {system_name} (already captured)")
+                    print(f"\n  [WARN] DUPLICATE: {system_name} (already captured)")
                     play_error_sound()
                     # Delete screenshots for duplicates
                     try:
@@ -189,13 +197,13 @@ if __name__ == "__main__":
                 if info['reinforcing_points'] < 0:
                     missing.append("Reinf")
 
-                print(f"\n  ✗ INVALID: Missing {', '.join(missing)}")
+                print(f"\n  [X] INVALID: Missing {', '.join(missing)}")
                 print(f"  Debug saved: {cropped_path}, {ocr_text_path}")
                 print(f"  Screenshot: {screenshot_path}")
                 play_error_sound()
 
         except Exception as e:
-            print(f"\n  ✗ ERROR: {str(e)}")
+            print(f"\n  [X] ERROR: {str(e)}")
             play_error_sound()
 
     # Register F9 hotkey

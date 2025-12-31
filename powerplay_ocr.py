@@ -89,6 +89,119 @@ class PowerplayOCR:
         # Convert to PIL Image
         return Image.fromarray(cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB))
 
+    def detect_initial_control_points_from_bar(self, image_path):
+        """
+        Calculate initial control points from the white marker position on the status bar.
+
+        The status bar (relative to cropped panel) is at:
+        - Position: (16, 568) to (735, 609)
+        - Contains 4 sections with CP ranges:
+          * Unoccupied (grey): 0 CP (fixed)
+          * Exploited (red): 0 - 350,000 CP
+          * Fortified (green): 350,000 - 1,000,000 CP
+          * Stronghold (purple): 1,000,000 - 2,000,000 CP
+        - White vertical line indicates initial CP position
+
+        Args:
+            image_path: Path to screenshot (full or cropped panel)
+
+        Returns:
+            Integer representing initial control points
+            Returns None if white line cannot be detected
+        """
+        import cv2
+        import numpy as np
+
+        # Load image
+        img = cv2.imread(image_path)
+        if img is None:
+            raise ValueError(f"Could not load image: {image_path}")
+
+        height, width = img.shape[:2]
+
+        # If full screenshot, crop to panel first
+        if width > 2000:
+            pil_panel = self.crop_powerplay_panel(image_path)
+            img = cv2.cvtColor(np.array(pil_panel), cv2.COLOR_RGB2BGR)
+            height, width = img.shape[:2]
+
+        # Expected panel dimensions
+        expected_panel_width = 740
+        expected_panel_height = 646
+
+        # Calculate scaling factors
+        width_scale = width / expected_panel_width
+        height_scale = height / expected_panel_height
+
+        # Status bar coordinates (relative to cropped panel)
+        bar_left = int(16 * width_scale)
+        bar_top = int(568 * height_scale)
+        bar_right = int(735 * width_scale)
+        bar_bottom = int(609 * height_scale)
+
+        # Crop the status bar
+        status_bar = img[bar_top:bar_bottom, bar_left:bar_right]
+
+        # The white line is 3 pixels wide with:
+        # - Center pixel: pure white (255, 255, 255)
+        # - Left/right pixels: slightly blurred due to antialiasing
+
+        # Convert to grayscale for brightness detection
+        gray = cv2.cvtColor(status_bar, cv2.COLOR_BGR2GRAY)
+        bar_width = bar_right - bar_left
+        bar_height = bar_bottom - bar_top
+
+        # Find the center of the 3-pixel white line by looking for pure white pixels
+        # Pure white pixel should have value = 255 (or very close)
+        pure_white_threshold = 250  # Allow slight JPEG compression artifacts
+
+        # Scan each column and look for the one with the most pure white pixels
+        column_pure_white_counts = []
+        for x in range(bar_width):
+            pure_white_count = np.sum(gray[:, x] >= pure_white_threshold)
+            column_pure_white_counts.append(pure_white_count)
+
+        # Find column with most pure white pixels (the center of the 3-pixel line)
+        if max(column_pure_white_counts) < 5:  # Need at least 5 pure white pixels to be the center line
+            return None
+
+        # The center pixel column is where we have the most pure white pixels
+        white_line_x = np.argmax(column_pure_white_counts)
+
+        # Calculate position ratio (0.0 to 1.0) across entire bar
+        position_ratio = white_line_x / bar_width
+
+        # The bar is divided into 4 equal sections
+        # Each section represents 25% of the bar width
+        section_width_ratio = 0.25
+
+        # Determine which section and position within that section
+        if position_ratio < section_width_ratio:
+            # Unoccupied section (0 - 25%)
+            # This represents 0 CP (always)
+            return 0
+        elif position_ratio < 2 * section_width_ratio:
+            # Exploited section (25% - 50%)
+            # Maps to 0 - 350,000 CP
+            position_in_section = (position_ratio - section_width_ratio) / section_width_ratio
+            cp = int(position_in_section * 350000)
+            # Round to nearest thousand
+            return round(cp / 1000) * 1000
+        elif position_ratio < 3 * section_width_ratio:
+            # Fortified section (50% - 75%)
+            # Maps to 350,000 - 1,000,000 CP
+            position_in_section = (position_ratio - 2 * section_width_ratio) / section_width_ratio
+            cp = int(350000 + position_in_section * (1000000 - 350000))
+            # Round to nearest thousand
+            return round(cp / 1000) * 1000
+        else:
+            # Stronghold section (75% - 100%)
+            # Maps to 1,000,000 - 2,000,000 CP
+            position_in_section = (position_ratio - 3 * section_width_ratio) / section_width_ratio
+            cp = int(1000000 + position_in_section * (2000000 - 1000000))
+            # Round to nearest thousand
+            return round(cp / 1000) * 1000
+
     def crop_powerplay_subsections(self, image_path):
         """
         Crop the Powerplay panel into subsections using exact pixel coordinates

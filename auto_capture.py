@@ -307,6 +307,14 @@ def main():
             print(f"  -> Parsing Powerplay information...")
             info = ocr.extract_powerplay_auto(screenshot_path)
 
+            # Detect initial control points from status bar (non-competitive states only)
+            is_competitive = 'powers' in info and info['powers']
+            if not is_competitive:
+                initial_cp = ocr.detect_initial_control_points_from_bar(screenshot_path)
+                info['initial_control_points'] = initial_cp if initial_cp is not None else -1
+            else:
+                info['initial_control_points'] = -1  # Not applicable for competitive states
+
             # Get raw text for debug
             text = ocr.extract_text(screenshot_path, preprocess_method='upscale', crop_panel=False, use_subsections=False)
 
@@ -345,6 +353,9 @@ def main():
                 f.write(f"  Controlling Power: '{info['controlling_power']}'\n")
                 f.write(f"  Opposing Power: '{info['opposing_power']}'\n")
                 f.write(f"  System Status: '{info['system_status']}'\n")
+                initial_cp = info.get('initial_control_points', -1)
+                if initial_cp >= 0:
+                    f.write(f"  Initial Control Points: {initial_cp:,}\n")
                 f.write(f"  Undermining Points: {info['undermining_points']}\n")
                 f.write(f"  Reinforcing Points: {info['reinforcing_points']}\n")
 
@@ -355,6 +366,9 @@ def main():
                 print(f"  -> Parsed:")
                 print(f"     System: {parsed_name}")
                 print(f"     Status: {info['system_status']}")
+                initial_cp = info.get('initial_control_points', -1)
+                if initial_cp >= 0:
+                    print(f"     Initial CP: {initial_cp:,}")
 
                 if is_competitive:
                     print(f"     Type: COMPETITIVE")
@@ -366,8 +380,8 @@ def main():
                     print(f"     Power: {info['controlling_power'] or info['opposing_power']}")
                     print(f"     CP: {info['undermining_points']} / {info['reinforcing_points']}")
 
-                # Save to collected systems
-                collected_systems[parsed_name] = info
+                # Save to collected systems (use input system name as key)
+                collected_systems[system_name] = info
 
                 # Append to output file (use original system name from input.txt)
                 with open(output_file, 'a', encoding='utf-8') as f:
@@ -417,22 +431,46 @@ def main():
     if collected_systems:
         print("\nSystem Name\tPower\tState\t\tUndermining\tReinforcement")
         print("-" * 80)
-        for parsed_name in sorted(collected_systems.keys()):
-            info = collected_systems[parsed_name]
-            # Find the original system name from input.txt by matching the parsed name
-            # Since we stored by parsed_name but want to display original name
-            original_name = parsed_name  # Use parsed name as fallback
-            for input_system_name in system_names:
-                # Fuzzy match to find the original name
-                from difflib import SequenceMatcher
-                if SequenceMatcher(None, input_system_name.upper(), parsed_name.upper()).ratio() >= 0.7:
-                    original_name = input_system_name
-                    break
-            excel_line = ocr.format_for_excel(info, original_system_name=original_name)
+        for system_name in sorted(collected_systems.keys()):
+            info = collected_systems[system_name]
+            # System name is already the original input name (used as dict key)
+            excel_line = ocr.format_for_excel(info, original_system_name=system_name)
             print(excel_line)
         print("=" * 80)
         print(f"\nData saved to: {output_file}")
         print("You can copy/paste this directly into Excel!")
+
+        # Print systems with initial control points
+        systems_with_initial_cp = []
+        for system_name in sorted(collected_systems.keys()):
+            info = collected_systems[system_name]
+            initial_cp = info.get('initial_control_points', -1)
+            if initial_cp >= 0:
+                # System name is already the original input name (used as dict key)
+                systems_with_initial_cp.append((system_name, initial_cp))
+
+        if systems_with_initial_cp:
+            print("\n" + "=" * 80)
+            print("INITIAL CONTROL POINTS SUMMARY")
+            print("=" * 80)
+            print(f"\nSystems with Initial CP: {len(systems_with_initial_cp)}/{len(collected_systems)}\n")
+            print("System Name\t\t\t\t\tInitial CP")
+            print("-" * 80)
+            for system_name, initial_cp in systems_with_initial_cp:
+                # Determine state range
+                if initial_cp == 0:
+                    state_range = "Unoccupied"
+                elif initial_cp < 350000:
+                    state_range = "Exploited"
+                elif initial_cp < 1000000:
+                    state_range = "Fortified"
+                else:
+                    state_range = "Stronghold"
+
+                # Format system name to fit in column
+                truncated_name = system_name[:40] if len(system_name) > 40 else system_name
+                print(f"{truncated_name:<40}\t{initial_cp:>10,}  ({state_range})")
+            print("=" * 80)
     else:
         print("\nNo valid systems captured.")
 

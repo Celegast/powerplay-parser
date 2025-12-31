@@ -50,15 +50,75 @@ def find_and_click_system_in_dropdown(search_x, search_y, system_name, debug_ind
     dropdown_left = search_x - 460
     dropdown_top = search_y + 25
     dropdown_width = 450
-    dropdown_height = 400  # Capture enough for ~10 results
+    dropdown_max_height = 600  # Maximum possible height to capture
 
     # Take screenshot of dropdown area immediately (dropdown should already be visible)
-    screenshot = pyautogui.screenshot(region=(dropdown_left, dropdown_top, dropdown_width, dropdown_height))
+    screenshot_full = pyautogui.screenshot(region=(dropdown_left, dropdown_top, dropdown_width, dropdown_max_height))
+
+    # Dynamically detect where the dropdown content ends
+    # Strategy: Scan from BOTTOM to TOP looking for where content starts
+    # Convert to OpenCV format for analysis
+    img_full = cv2.cvtColor(np.array(screenshot_full), cv2.COLOR_RGB2BGR)
+
+    # Convert to grayscale for brightness analysis
+    gray = cv2.cvtColor(img_full, cv2.COLOR_BGR2GRAY)
+
+    dropdown_height = dropdown_max_height  # Default to full height
+
+    # Scan from bottom to top
+    # Look for rows where most pixels are very dark (black background with no content)
+    dark_threshold = 30  # Pixel values below this are considered dark/black
+    dark_pixel_ratio_threshold = 0.9  # 90% of pixels must be dark
+
+    # We need to find where empty black space starts
+    # Look for 2 consecutive rows that are almost entirely black
+    for y in range(dropdown_max_height - 1, 10, -1):  # Start from bottom, go up to row 10
+        # Check current row and next row up
+        row_current = gray[y, :]
+        row_prev = gray[y - 1, :] if y > 0 else row_current
+
+        # Count dark pixels in both rows
+        dark_pixels_current = np.sum(row_current < dark_threshold)
+        dark_pixels_prev = np.sum(row_prev < dark_threshold)
+
+        dark_ratio_current = dark_pixels_current / len(row_current)
+        dark_ratio_prev = dark_pixels_prev / len(row_prev)
+
+        # If both rows are almost entirely dark, this is where content ended
+        if dark_ratio_current >= dark_pixel_ratio_threshold and dark_ratio_prev >= dark_pixel_ratio_threshold:
+            # Found the end of content - crop here
+            dropdown_height = y
+            # Don't break - keep going up to find the FIRST content (bottom-most)
+        else:
+            # Found content - stop here
+            if dropdown_height < dropdown_max_height:
+                # Add a small margin (10 pixels) to include the last line
+                dropdown_height = min(dropdown_height + 10, dropdown_max_height)
+                break
+
+    # Crop to just the dropdown area
+    screenshot = screenshot_full.crop((0, 0, dropdown_width, dropdown_height))
 
     # Save screenshot for debugging
     debug_path = f"auto_capture_debug/dropdown/dropdown_{debug_index:03d}.png"
     os.makedirs('auto_capture_debug/dropdown', exist_ok=True)
     screenshot.save(debug_path)
+
+    # Save debug info about the cropping
+    debug_info_path = f"auto_capture_debug/dropdown/dropdown_{debug_index:03d}_info.txt"
+    with open(debug_info_path, 'w') as f:
+        f.write(f"Max height captured: {dropdown_max_height}px\n")
+        f.write(f"Detected dropdown height: {dropdown_height}px\n")
+        f.write(f"Dark pixel threshold: {dark_threshold}\n")
+        f.write(f"Dark ratio threshold: {dark_pixel_ratio_threshold}\n")
+        f.write(f"Looking for: {system_name}\n")
+        f.write(f"\nRow darkness analysis (from bottom up):\n")
+        for y in range(dropdown_max_height - 1, max(0, dropdown_height - 50), -1):
+            row = gray[y, :]
+            dark_pixels = np.sum(row < dark_threshold)
+            dark_ratio = dark_pixels / len(row)
+            marker = " <- BOUNDARY" if y == dropdown_height else ""
+            f.write(f"Row {y}: {dark_ratio:.1%} dark{marker}\n")
 
     # Preprocess image for better OCR accuracy
     # Convert PIL to OpenCV format

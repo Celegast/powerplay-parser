@@ -1931,12 +1931,13 @@ class PowerplayOCR:
         Format parsed data as tab-separated values for Excel
 
         Handles both standard and competitive states:
-        - Standard states: Power, State, Undermining, Reinforcement as normal
+        - Standard states: Power, State, Undermining, Reinforcement, Initial CP as normal
         - Competitive states:
           * Power = 1st power name
           * State = 2nd power name
           * Undermining = 2nd power control points
           * Reinforcement = 1st power control points
+          * Initial CP = (empty - not applicable)
 
         Args:
             info: Dictionary with parsed powerplay information
@@ -1961,16 +1962,16 @@ class PowerplayOCR:
                 elif p.get('rank') == 2:
                     power_2nd = p
 
-            # Format: System Name, 1st Power, 2nd Power, (empty), 2nd Score, 1st Score
+            # Format: System Name, 1st Power, 2nd Power, (empty), 2nd Score, 1st Score, (empty for Initial CP)
             power_col = power_1st.get('name', '') if power_1st else ''
             state_col = power_2nd.get('name', '') if power_2nd else ''
             undermining_col = str(power_2nd.get('score', '')) if power_2nd else ''
             reinforcement_col = str(power_1st.get('score', '')) if power_1st else ''
 
-            return f"{system_name}\t{power_col}\t{state_col}\t\t{undermining_col}\t{reinforcement_col}"
+            return f"{system_name}\t{power_col}\t{state_col}\t\t{undermining_col}\t{reinforcement_col}\t"
         else:
             # Standard state - original format
-            # Columns: System Name, Power, State, (empty), Undermining, Reinforcement
+            # Columns: System Name, Power, State, (empty), Undermining, Reinforcement, Initial CP
             # Use original system name if provided, otherwise use OCR'd name
             system_name = original_system_name if original_system_name else info.get('system_name', '')
             power = info.get('controlling_power', '') or info.get('opposing_power', '') or ''
@@ -1978,8 +1979,9 @@ class PowerplayOCR:
             # Note: 0 is a valid value, so use >= 0 check
             undermining = str(info['undermining_points']) if info.get('undermining_points', -1) >= 0 else ''
             reinforcement = str(info['reinforcing_points']) if info.get('reinforcing_points', -1) >= 0 else ''
+            initial_cp = str(info['initial_control_points']) if info.get('initial_control_points', -1) >= 0 else ''
 
-            return f"{system_name}\t{power}\t{state}\t\t{undermining}\t{reinforcement}"
+            return f"{system_name}\t{power}\t{state}\t\t{undermining}\t{reinforcement}\t{initial_cp}"
 
     def start_continuous_monitoring(self, hotkey='f9', check_interval=2.0, output_file='powerplay_data.txt'):
         """
@@ -1998,8 +2000,8 @@ class PowerplayOCR:
         print(f"Output file: {output_file}")
         print("=" * 60)
         print("\nValid datasets will be printed in Excel-compatible format:")
-        print("System Name\tPower\tState\t\tUndermining\tReinforcement")
-        print("-" * 60)
+        print("System Name\tPower\tState\t\tUndermining\tReinforcement\tInitial CP")
+        print("-" * 80)
 
         monitoring_active = False
         last_capture_time = 0

@@ -350,7 +350,7 @@ def main():
 
     # Initialize output file
     with open(output_file, 'w', encoding='utf-8') as f:
-        f.write("System Name\tPower\tState\t\tUndermining\tReinforcement\n")
+        f.write("System Name\tPower\tState\t\tUndermining\tReinforcement\tInitial CP\n")
 
     # Process each system
     for i, system_name in enumerate(system_names, 1):
@@ -494,8 +494,8 @@ def main():
     print("=" * 80)
 
     if collected_systems:
-        print("\nSystem Name\tPower\tState\t\tUndermining\tReinforcement")
-        print("-" * 80)
+        print("\nSystem Name\tPower\tState\t\tUndermining\tReinforcement\tInitial CP")
+        print("-" * 100)
         for system_name in sorted(collected_systems.keys()):
             info = collected_systems[system_name]
             # System name is already the original input name (used as dict key)

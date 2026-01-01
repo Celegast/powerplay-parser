@@ -1,13 +1,20 @@
 """
-Live Demo - Manual Powerplay Capture with Audio Feedback
-Press F9 to capture each system
+Manual Powerplay Capture
+Interactive tool for manually capturing powerplay data system-by-system
+Press F9 to capture current system
 Press ESC to exit
 """
-from powerplay_ocr import PowerplayOCR
-import keyboard
-import winsound
+
+# Standard library imports
 import os
 import time
+
+# Third-party imports
+import keyboard
+import winsound
+
+# Local imports
+from powerplay_ocr import PowerplayOCR
 
 def play_success_sound():
     """Play a success sound (high beep)"""

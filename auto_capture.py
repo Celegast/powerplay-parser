@@ -3,14 +3,20 @@
 Automated Powerplay System Capture
 Reads system names from input.txt and automatically captures each one
 """
-from powerplay_ocr import PowerplayOCR
-import pyautogui
-import time
+
+# Standard library imports
 import os
-import winsound
 import random
-import ctypes
-from ctypes import wintypes
+import time
+from difflib import SequenceMatcher
+
+# Third-party imports
+import pyautogui
+import winsound
+
+# Local imports
+from powerplay_ocr import PowerplayOCR
+import config
 
 def play_success_sound():
     """Play a success sound (high beep)"""
@@ -45,12 +51,11 @@ def find_and_click_system_in_dropdown(search_x, search_y, system_name, debug_ind
     from PIL import Image
 
     # Dropdown appears below the search field
-    # Approximate dropdown region (adjust based on your resolution)
-    # Search field is at (2700, 168), dropdown starts 10 pixels below
-    dropdown_left = search_x - 460
-    dropdown_top = search_y + 25
-    dropdown_width = 450
-    dropdown_max_height = 600  # Maximum possible height to capture
+    # Use configuration values for dropdown positioning
+    dropdown_left = search_x + config.DROPDOWN_OFFSET_X
+    dropdown_top = search_y + config.DROPDOWN_OFFSET_Y
+    dropdown_width = config.DROPDOWN_WIDTH
+    dropdown_max_height = config.DROPDOWN_MAX_HEIGHT
 
     # Take screenshot of dropdown area immediately (dropdown should already be visible)
     screenshot_full = pyautogui.screenshot(region=(dropdown_left, dropdown_top, dropdown_width, dropdown_max_height))
@@ -184,7 +189,7 @@ def find_and_click_system_in_dropdown(search_x, search_y, system_name, debug_ind
 
     # If no exact match, try fuzzy matching using similarity ratio
     if match_index < 0:
-        from difflib import SequenceMatcher
+        # SequenceMatcher imported at top of file
         best_ratio = 0.0
         best_index = -1
 
@@ -339,9 +344,9 @@ def main():
     os.makedirs('auto_capture_debug/ocr_text', exist_ok=True)
     os.makedirs('auto_capture_debug/subsections', exist_ok=True)
 
-    # Search field coordinates
-    SEARCH_X = 2700
-    SEARCH_Y = 168
+    # Search field coordinates from config
+    SEARCH_X = config.SEARCH_FIELD_X
+    SEARCH_Y = config.SEARCH_FIELD_Y
 
     # Initialize output file
     with open(output_file, 'w', encoding='utf-8') as f:

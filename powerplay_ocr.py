@@ -3,18 +3,25 @@ Elite Dangerous Powerplay OCR Parser
 Extracts system information from screenshots
 """
 
-import pytesseract
-from PIL import Image
-import cv2
-import numpy as np
-import pyautogui
-import keyboard
+# Standard library imports
 import os
-from datetime import datetime
 import re
 import time
+from datetime import datetime
 
-#pytesseract.pytesseract.tesseract_cmd = r'C:\Tools\Tesseract-OCR\tesseract.exe'
+# Third-party imports
+import cv2
+import keyboard
+import numpy as np
+import pyautogui
+import pytesseract
+from PIL import Image
+
+# Local imports
+import config
+
+# Uncomment and set if tesseract is not in PATH
+# pytesseract.pytesseract.tesseract_cmd = r'C:\Tools\Tesseract-OCR\tesseract.exe'
 
 
 class PowerplayOCR:
@@ -59,29 +66,27 @@ class PowerplayOCR:
             raise ValueError(f"Could not load image: {image_path}")
         height, width = img.shape[:2]
 
-        # Exact pixel coordinates for 5120x1440 resolution
-        # Panel location: upper-left (2916, 224)
-        # Standard: lower-right (3656, 870) -> 740×646
-        # Extended: lower-right (3658, 1064) -> 742×840
-        expected_width = 5120
-        expected_height = 1440
+        # Use coordinates from config
+        # All values based on 5120x1440 resolution with automatic scaling
+        expected_width = config.EXPECTED_SCREEN_WIDTH
+        expected_height = config.EXPECTED_SCREEN_HEIGHT
 
         # Calculate scaling factors
         width_scale = width / expected_width
         height_scale = height / expected_height
 
         # Apply scaling to coordinates
-        left = int(2916 * width_scale)
-        top = int(224 * height_scale)
+        left = int(config.PANEL_LEFT * width_scale)
+        top = int(config.PANEL_TOP * height_scale)
 
         if extended:
             # Extended panel for EXPANSION/CONTESTED (742×840)
-            right = int(3658 * width_scale)
-            bottom = int(1064 * height_scale)
+            right = int(config.PANEL_RIGHT_EXTENDED * width_scale)
+            bottom = int(config.PANEL_BOTTOM_EXTENDED * height_scale)
         else:
             # Standard panel (740×646)
-            right = int(3656 * width_scale)
-            bottom = int(870 * height_scale)
+            right = int(config.PANEL_RIGHT_STANDARD * width_scale)
+            bottom = int(config.PANEL_BOTTOM_STANDARD * height_scale)
 
         # Crop the image
         cropped = img[top:bottom, left:right]
@@ -125,9 +130,9 @@ class PowerplayOCR:
             img = cv2.cvtColor(np.array(pil_panel), cv2.COLOR_RGB2BGR)
             height, width = img.shape[:2]
 
-        # Expected panel dimensions
-        expected_panel_width = 740
-        expected_panel_height = 646
+        # Expected panel dimensions from config
+        expected_panel_width = config.PANEL_WIDTH_STANDARD
+        expected_panel_height = config.PANEL_HEIGHT_STANDARD
 
         # Calculate scaling factors
         width_scale = width / expected_panel_width
@@ -233,10 +238,9 @@ class PowerplayOCR:
             img = cv2.cvtColor(np.array(pil_panel), cv2.COLOR_RGB2BGR)
             height, width = img.shape[:2]
 
-        # Expected panel dimensions after cropping from 5120x1440
-        # Panel size: 3656-2916 = 740 width, 870-224 = 646 height
-        expected_panel_width = 740
-        expected_panel_height = 646
+        # Expected panel dimensions from config
+        expected_panel_width = config.PANEL_WIDTH_STANDARD
+        expected_panel_height = config.PANEL_HEIGHT_STANDARD
 
         # Calculate scaling factors in case of different resolution
         width_scale = width / expected_panel_width
@@ -1184,14 +1188,14 @@ class PowerplayOCR:
             # Crop status description region to check for keywords
             if width > 2000:
                 # Full screenshot - crop to status region
-                # Status is at roughly (2916+14, 224+212) to (2916+734, 224+280)
-                width_scale = width / 5120
-                height_scale = height / 1440
+                # Status is at roughly (PANEL_LEFT+14, PANEL_TOP+212) to (PANEL_LEFT+734, PANEL_TOP+280)
+                width_scale = width / config.EXPECTED_SCREEN_WIDTH
+                height_scale = height / config.EXPECTED_SCREEN_HEIGHT
 
-                left = int((2916 + 14) * width_scale)
-                top = int((224 + 212) * height_scale)
-                right = int((2916 + 734) * width_scale)
-                bottom = int((224 + 280) * height_scale)
+                left = int((config.PANEL_LEFT + 14) * width_scale)
+                top = int((config.PANEL_TOP + 212) * height_scale)
+                right = int((config.PANEL_LEFT + 734) * width_scale)
+                bottom = int((config.PANEL_TOP + 280) * height_scale)
 
                 status_region = img[top:bottom, left:right]
             else:

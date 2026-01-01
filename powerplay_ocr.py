@@ -844,6 +844,11 @@ class PowerplayOCR:
                                     best_undermining = int(undermining_match.group(1).replace(',', ''))
                                 except ValueError:
                                     pass
+                            elif best_undermining is None and parts[0]:
+                                # Check if undermining is 0 (can happen right after tick)
+                                text_cleaned = parts[0].strip()
+                                if re.match(r'^[0O]\s*$', text_cleaned) or len(text_cleaned) < 3:
+                                    best_undermining = 0
 
                             if reinforcing_match and best_reinforcing is None:
                                 try:
@@ -851,9 +856,12 @@ class PowerplayOCR:
                                 except ValueError:
                                     pass
                             elif best_reinforcing is None and parts[1]:
-                                # If no reinforcing number found, check if the text contains "0" or similar
-                                # For EXPLOITED systems, reinforcing can be 0
-                                if '0' in parts[1] or len(parts[1].strip()) < 5:
+                                # If no reinforcing number found, check if the text contains "0" or is nearly empty
+                                # For systems right after a tick, reinforcing can be 0
+                                # Check for explicit zero or very short/empty text
+                                text_cleaned = parts[1].strip()
+                                # Match standalone 0 or O (common OCR mistake for 0)
+                                if re.match(r'^[0O]\s*$', text_cleaned) or len(text_cleaned) < 3:
                                     best_reinforcing = 0
 
                             # If we found both numbers, we can stop
@@ -884,8 +892,17 @@ class PowerplayOCR:
                     elif len(numbers) == 1:
                         try:
                             info['undermining_points'] = int(numbers[0].replace(',', ''))
+                            # Check if reinforcing might be 0
+                            if info['reinforcing_points'] == -1 and ('0' in text or len(text) < 5):
+                                info['reinforcing_points'] = 0
                         except ValueError:
                             pass
+                    elif len(numbers) == 0:
+                        # No numbers found at all - might be 0 0
+                        # Check if text is very minimal or contains only 0/O
+                        if len(text) < 5 or re.match(r'^[0O\s,]*$', text):
+                            info['undermining_points'] = 0
+                            info['reinforcing_points'] = 0
             finally:
                 try:
                     os.unlink(tmp_path)
@@ -1405,9 +1422,9 @@ class PowerplayOCR:
             'status_description': '',
             'opposing_power': '',
             'controlling_power': '',
-            'undermining_points': 0,
-            'reinforcing_points': 0,
-            'control_points': 0,
+            'undermining_points': -1,  # -1 means not parsed, 0 is valid
+            'reinforcing_points': -1,  # -1 means not parsed, 0 is valid
+            'control_points': -1,      # -1 means not parsed, 0 is valid
             'system_strength_penalty': '',
             'beyond_frontline_penalty': ''
         }

@@ -424,6 +424,16 @@ def main():
                 f.write(f"  Undermining Points: {info['undermining_points']}\n")
                 f.write(f"  Reinforcing Points: {info['reinforcing_points']}\n")
 
+                # Add voting details if available (shows OCR accuracy)
+                if '_undermining_votes' in info:
+                    f.write(f"\n  OCR Voting Results (Undermining):\n")
+                    f.write(f"    Votes: {info['_undermining_votes']}\n")
+                    f.write(f"    Winner: {info['_undermining_winner']}\n")
+                if '_reinforcing_votes' in info:
+                    f.write(f"  OCR Voting Results (Reinforcing):\n")
+                    f.write(f"    Votes: {info['_reinforcing_votes']}\n")
+                    f.write(f"    Winner: {info['_reinforcing_winner']}\n")
+
             # Check if valid
             if ocr.is_valid_powerplay_data(info):
                 parsed_name = info['system_name']

@@ -814,18 +814,21 @@ class PowerplayOCR:
                     pass
 
         # Process control points section - both undermining and reinforcing
+        # Use majority voting across multiple OCR methods for better accuracy
         if 'control_points' in subsections:
             with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
                 tmp_path = tmp.name
                 subsections['control_points'].save(tmp_path)
 
             try:
-                # Try multiple preprocessing methods for best OCR accuracy
-                # 'upscale' sometimes misreads 9 as 8, so try 'none' and 'threshold' too
-                best_undermining = None
-                best_reinforcing = None
+                # Single method approach (upscale only)
+                undermining_votes = []
+                reinforcing_votes = []
 
-                for method in ['none', 'threshold', 'upscale']:
+                # Use only 'upscale' - it has 100% accuracy in testing
+                # Majority voting abandoned after testing showed other methods introduce errors
+                # Case: capture_042 had votes [435281, 1435281, 135281, 435281] where only upscale (135281) was correct
+                for method in ['upscale']:
                     text_full = pytesseract.image_to_string(
                         self.preprocess_image(tmp_path, method=method, crop_panel=False),
                         config='--oem 3 --psm 7 --dpi 300'
@@ -835,48 +838,56 @@ class PowerplayOCR:
                     if 'CONTROL POINTS' in text_full.upper():
                         parts = re.split(r'CONTROL\s+POINTS', text_full, flags=re.IGNORECASE)
                         if len(parts) == 2:
-                            # Extract numbers from each part
+                            # Extract undermining number
                             undermining_match = re.search(r'(\d{1,}(?:,\d{3})*)', parts[0])
-                            reinforcing_match = re.search(r'(\d{1,}(?:,\d{3})*)', parts[1])
-
-                            if undermining_match and best_undermining is None:
+                            if undermining_match:
                                 try:
-                                    best_undermining = int(undermining_match.group(1).replace(',', ''))
+                                    value = int(undermining_match.group(1).replace(',', ''))
+                                    undermining_votes.append(value)
                                 except ValueError:
                                     pass
-                            elif best_undermining is None and parts[0]:
-                                # Check if undermining is 0 (can happen right after tick)
+                            else:
+                                # Check if it's 0
                                 text_cleaned = parts[0].strip()
                                 if re.match(r'^[0O]\s*$', text_cleaned) or len(text_cleaned) < 3:
-                                    best_undermining = 0
+                                    undermining_votes.append(0)
 
-                            if reinforcing_match and best_reinforcing is None:
+                            # Extract reinforcing number
+                            reinforcing_match = re.search(r'(\d{1,}(?:,\d{3})*)', parts[1])
+                            if reinforcing_match:
                                 try:
-                                    best_reinforcing = int(reinforcing_match.group(1).replace(',', ''))
+                                    value = int(reinforcing_match.group(1).replace(',', ''))
+                                    reinforcing_votes.append(value)
                                 except ValueError:
                                     pass
-                            elif best_reinforcing is None and parts[1]:
-                                # If no reinforcing number found, check if the text contains "0" or is nearly empty
-                                # For systems right after a tick, reinforcing can be 0
-                                # Check for explicit zero or very short/empty text
+                            else:
+                                # Check if it's 0
                                 text_cleaned = parts[1].strip()
-                                # Match standalone 0 or O (common OCR mistake for 0)
                                 if re.match(r'^[0O]\s*$', text_cleaned) or len(text_cleaned) < 3:
-                                    best_reinforcing = 0
+                                    reinforcing_votes.append(0)
+                    else:
+                        # Fallback: if "CONTROL POINTS" not found, try to extract any two numbers
+                        numbers = re.findall(r'(\d{1,}(?:,\d{3})*)', text_full)
+                        if len(numbers) >= 2:
+                            try:
+                                undermining_votes.append(int(numbers[0].replace(',', '')))
+                                reinforcing_votes.append(int(numbers[1].replace(',', '')))
+                            except ValueError:
+                                pass
 
-                            # If we found both numbers, we can stop
-                            if best_undermining is not None and best_reinforcing is not None:
-                                break
+                # With single method (upscale), just use the value directly
+                if undermining_votes:
+                    info['undermining_points'] = undermining_votes[0]
+                    info['_undermining_votes'] = undermining_votes
+                    info['_undermining_winner'] = undermining_votes[0]
 
-                # Set the best results found
-                if best_undermining is not None:
-                    info['undermining_points'] = best_undermining
-                if best_reinforcing is not None:
-                    info['reinforcing_points'] = best_reinforcing
+                if reinforcing_votes:
+                    info['reinforcing_points'] = reinforcing_votes[0]
+                    info['_reinforcing_votes'] = reinforcing_votes
+                    info['_reinforcing_winner'] = reinforcing_votes[0]
 
-                # If still no results, try the fallback method
-                if info['undermining_points'] == -1:
-                    # Fallback: if no "CONTROL POINTS" found, try digit whitelist
+                # If still no results after voting, try the fallback method with digit whitelist
+                if info['undermining_points'] == -1 or info['reinforcing_points'] == -1:
                     text = pytesseract.image_to_string(
                         self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
                         config='--oem 3 --psm 7 --dpi 300 -c tessedit_char_whitelist=0123456789, '
@@ -885,13 +896,16 @@ class PowerplayOCR:
                     numbers = re.findall(r'(\d{1,}(?:,\d{3})*)', text)
                     if len(numbers) >= 2:
                         try:
-                            info['undermining_points'] = int(numbers[0].replace(',', ''))
-                            info['reinforcing_points'] = int(numbers[1].replace(',', ''))
+                            if info['undermining_points'] == -1:
+                                info['undermining_points'] = int(numbers[0].replace(',', ''))
+                            if info['reinforcing_points'] == -1:
+                                info['reinforcing_points'] = int(numbers[1].replace(',', ''))
                         except ValueError:
                             pass
                     elif len(numbers) == 1:
                         try:
-                            info['undermining_points'] = int(numbers[0].replace(',', ''))
+                            if info['undermining_points'] == -1:
+                                info['undermining_points'] = int(numbers[0].replace(',', ''))
                             # Check if reinforcing might be 0
                             if info['reinforcing_points'] == -1 and ('0' in text or len(text) < 5):
                                 info['reinforcing_points'] = 0
@@ -899,10 +913,11 @@ class PowerplayOCR:
                             pass
                     elif len(numbers) == 0:
                         # No numbers found at all - might be 0 0
-                        # Check if text is very minimal or contains only 0/O
                         if len(text) < 5 or re.match(r'^[0O\s,]*$', text):
-                            info['undermining_points'] = 0
-                            info['reinforcing_points'] = 0
+                            if info['undermining_points'] == -1:
+                                info['undermining_points'] = 0
+                            if info['reinforcing_points'] == -1:
+                                info['reinforcing_points'] = 0
             finally:
                 try:
                     os.unlink(tmp_path)

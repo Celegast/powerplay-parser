@@ -363,7 +363,7 @@ def main():
 
             # Wait for map to load and display system info
             print(f"  -> Waiting for map to load (3 seconds)...")
-            time.sleep(3)
+            time.sleep(1.5)
 
             # Step 5: Take screenshot and parse
             print(f"  -> Capturing screenshot...")

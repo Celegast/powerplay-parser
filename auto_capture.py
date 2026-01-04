@@ -252,6 +252,130 @@ def find_and_click_system_in_dropdown(search_x, search_y, system_name, debug_ind
 
     return False
 
+def get_cycle_tick_time(reference_time):
+    """
+    Calculate the most recent Thursday 7am UTC tick before (or at) the reference time.
+
+    Powerplay cycles run from Thursday 7am UTC to the next Thursday 7am UTC.
+
+    Args:
+        reference_time: datetime object to calculate the cycle tick for
+
+    Returns:
+        datetime object representing the most recent Thursday 7am UTC
+    """
+    from datetime import timedelta, timezone
+
+    # Get the reference time in UTC
+    if reference_time.tzinfo is None:
+        # Assume local time, convert to UTC
+        reference_utc = reference_time.replace(tzinfo=timezone.utc)
+    else:
+        reference_utc = reference_time.astimezone(timezone.utc)
+
+    # Find the most recent Thursday 7am UTC
+    # Thursday is weekday 3 (Monday=0, Tuesday=1, Wednesday=2, Thursday=3, ...)
+    current_weekday = reference_utc.weekday()
+
+    # Calculate days since last Thursday
+    if current_weekday >= 3:
+        # We're on or after Thursday this week
+        days_since_thursday = current_weekday - 3
+    else:
+        # We're before Thursday (Mon, Tue, Wed) - go back to last week's Thursday
+        days_since_thursday = current_weekday + 4  # (7 - 3 + current_weekday)
+
+    # Go back to that Thursday at 7am UTC
+    last_thursday = reference_utc - timedelta(days=days_since_thursday)
+    last_tick = last_thursday.replace(hour=7, minute=0, second=0, microsecond=0)
+
+    # If we're on Thursday but before 7am UTC, go back one more week
+    if last_tick > reference_utc:
+        last_tick = last_tick - timedelta(days=7)
+
+    return last_tick
+
+def load_previous_capture(output_dir, current_time):
+    """
+    Load the most recent previous capture file for comparison
+
+    Args:
+        output_dir: Directory containing capture files
+        current_time: Current datetime for cycle comparison
+
+    Returns:
+        Tuple of (previous_data, is_same_cycle) where:
+        - previous_data: Dictionary mapping system names to {undermining, reinforcing} or None
+        - is_same_cycle: Boolean indicating if previous capture is from same cycle
+    """
+    import glob
+    from datetime import datetime
+
+    # Find all previous capture files
+    pattern = os.path.join(output_dir, 'powerplay_auto_capture_*.txt')
+    files = sorted(glob.glob(pattern))
+
+    if len(files) < 1:
+        return None, False  # No previous file
+
+    # Get the most recent file (the current file hasn't been written yet, so files[-1] is the previous run)
+    prev_file = files[-1]
+
+    print(f"\nLoading previous capture for comparison: {os.path.basename(prev_file)}")
+
+    # Extract timestamp from filename (format: powerplay_auto_capture_YYYYMMDD_HHMMSS.txt)
+    basename = os.path.basename(prev_file)
+    try:
+        # Extract the timestamp part: YYYYMMDD_HHMMSS
+        timestamp_str = basename.replace('powerplay_auto_capture_', '').replace('.txt', '')
+        # Parse as naive datetime (local time when file was created)
+        prev_time = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
+        # Note: prev_time is in local time, same as current_time will be
+    except ValueError:
+        print(f"  Warning: Could not parse timestamp from filename")
+        return None, False
+
+    # Check if both captures are in the same cycle
+    current_tick = get_cycle_tick_time(current_time)
+    previous_tick = get_cycle_tick_time(prev_time)
+    is_same_cycle = (current_tick == previous_tick)
+
+    if is_same_cycle:
+        print(f"  Previous capture is from the SAME cycle (tick: {current_tick.strftime('%Y-%m-%d %H:%M UTC')})")
+    else:
+        print(f"  WARNING: Previous capture is from a DIFFERENT cycle!")
+        print(f"    Previous tick: {previous_tick.strftime('%Y-%m-%d %H:%M UTC')}")
+        print(f"    Current tick:  {current_tick.strftime('%Y-%m-%d %H:%M UTC')}")
+        print(f"  -> CP validation will be SKIPPED (values reset after cycle tick)")
+
+    previous_data = {}
+    try:
+        with open(prev_file, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+
+        # Skip header line
+        for line in lines[1:]:
+            line = line.strip()
+            if not line or line.startswith('-') or line.startswith('='):
+                continue
+
+            parts = line.split('\t')
+            if len(parts) >= 6:
+                system_name = parts[0]
+                try:
+                    undermining = int(parts[4].replace(',', '')) if parts[4] else -1
+                    reinforcing = int(parts[5].replace(',', '')) if parts[5] else -1
+                    previous_data[system_name] = {'undermining': undermining, 'reinforcing': reinforcing}
+                except (ValueError, IndexError):
+                    continue
+
+    except Exception as e:
+        print(f"  Warning: Could not load previous file: {e}")
+        return None, False
+
+    print(f"  Loaded {len(previous_data)} systems from previous capture")
+    return previous_data, is_same_cycle
+
 def click_and_paste(x, y, text, debug_index=0):
     """
     Click at coordinates and type text with randomized movement and timing
@@ -306,6 +430,18 @@ def main():
     print("4. Capture and parse the Powerplay information")
     print("\n" + "=" * 80)
 
+    # Create output files: main file + timestamped archive
+    from datetime import datetime as dt
+    timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = 'auto_capture_outputs'
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Main output file (always latest)
+    main_output_file = 'powerplay_auto_capture.txt'
+
+    # Timestamped archive file
+    archive_output_file = os.path.join(output_dir, f'powerplay_auto_capture_{timestamp}.txt')
+
     # Check if input.txt exists
     if not os.path.exists('input.txt'):
         print("\nERROR: input.txt not found!")
@@ -326,6 +462,10 @@ def main():
     if len(system_names) > 5:
         print(f"  ... and {len(system_names) - 5} more")
 
+    # Load previous capture for comparison
+    current_time = dt.now()
+    previous_data, is_same_cycle = load_previous_capture(output_dir, current_time)
+
     print("\n" + "=" * 80)
     print("\nYou have 5 seconds to switch to Elite Dangerous...")
     print("Make sure the Galaxy Map is open and ready!")
@@ -336,7 +476,6 @@ def main():
     print("=" * 80)
 
     ocr = PowerplayOCR()
-    output_file = 'powerplay_auto_capture.txt'
     collected_systems = {}
 
     # Create directories for debug output
@@ -348,9 +487,12 @@ def main():
     SEARCH_X = config.SEARCH_FIELD_X
     SEARCH_Y = config.SEARCH_FIELD_Y
 
-    # Initialize output file
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.write("System Name\tPower\tState\t\tUndermining\tReinforcement\tInitial CP\n")
+    # Initialize both output files with headers
+    header = "System Name\tPower\tState\t\tUndermining\tReinforcement\tInitial CP\n"
+    with open(main_output_file, 'w', encoding='utf-8') as f:
+        f.write(header)
+    with open(archive_output_file, 'w', encoding='utf-8') as f:
+        f.write(header)
 
     # Process each system
     for i, system_name in enumerate(system_names, 1):
@@ -458,9 +600,11 @@ def main():
                 # Save to collected systems (use input system name as key)
                 collected_systems[system_name] = info
 
-                # Append to output file (use original system name from input.txt)
-                with open(output_file, 'a', encoding='utf-8') as f:
-                    excel_line = ocr.format_for_excel(info, original_system_name=system_name)
+                # Append to both output files (use original system name from input.txt)
+                excel_line = ocr.format_for_excel(info, original_system_name=system_name)
+                with open(main_output_file, 'a', encoding='utf-8') as f:
+                    f.write(excel_line + '\n')
+                with open(archive_output_file, 'a', encoding='utf-8') as f:
                     f.write(excel_line + '\n')
 
                 print(f"  -> [OK] Data saved!")
@@ -512,39 +656,69 @@ def main():
             excel_line = ocr.format_for_excel(info, original_system_name=system_name)
             print(excel_line)
         print("=" * 80)
-        print(f"\nData saved to: {output_file}")
+        print(f"\nData saved to:")
+        print(f"  Main file: {main_output_file}")
+        print(f"  Archive:   {archive_output_file}")
         print("You can copy/paste this directly into Excel!")
 
-        # Print systems with initial control points
-        systems_with_initial_cp = []
-        for system_name in sorted(collected_systems.keys()):
-            info = collected_systems[system_name]
-            initial_cp = info.get('initial_control_points', -1)
-            if initial_cp >= 0:
-                # System name is already the original input name (used as dict key)
-                systems_with_initial_cp.append((system_name, initial_cp))
-
-        if systems_with_initial_cp:
+        # Compare with previous capture to detect anomalies
+        if previous_data and is_same_cycle:
             print("\n" + "=" * 80)
-            print("INITIAL CONTROL POINTS SUMMARY")
+            print("CYCLE VALIDATION - CP values should only increase within a cycle")
             print("=" * 80)
-            print(f"\nSystems with Initial CP: {len(systems_with_initial_cp)}/{len(collected_systems)}\n")
-            print("System Name\t\t\t\t\tInitial CP")
-            print("-" * 80)
-            for system_name, initial_cp in systems_with_initial_cp:
-                # Determine state range
-                if initial_cp == 0:
-                    state_range = "Unoccupied"
-                elif initial_cp < 350000:
-                    state_range = "Exploited"
-                elif initial_cp < 1000000:
-                    state_range = "Fortified"
-                else:
-                    state_range = "Stronghold"
 
-                # Format system name to fit in column
-                truncated_name = system_name[:40] if len(system_name) > 40 else system_name
-                print(f"{truncated_name:<40}\t{initial_cp:>10,}  ({state_range})")
+            violations = []
+            for system_name in sorted(collected_systems.keys()):
+                if system_name not in previous_data:
+                    continue
+
+                current = collected_systems[system_name]
+                previous = previous_data[system_name]
+
+                current_u = current.get('undermining_points', -1)
+                current_r = current.get('reinforcing_points', -1)
+                prev_u = previous.get('undermining', -1)
+                prev_r = previous.get('reinforcing', -1)
+
+                # Check for decreases (possible OCR errors)
+                u_decreased = prev_u >= 0 and current_u >= 0 and current_u < prev_u
+                r_decreased = prev_r >= 0 and current_r >= 0 and current_r < prev_r
+
+                if u_decreased or r_decreased:
+                    violations.append({
+                        'system': system_name,
+                        'prev_u': prev_u,
+                        'curr_u': current_u,
+                        'prev_r': prev_r,
+                        'curr_r': current_r,
+                        'u_decreased': u_decreased,
+                        'r_decreased': r_decreased
+                    })
+
+            if violations:
+                print(f"\nWARNING: {len(violations)} system(s) with DECREASED CP (possible OCR errors):\n")
+                print(f"{'System Name':<40} {'Type':<15} {'Previous':<12} {'Current':<12} {'Change'}")
+                print("-" * 100)
+                for v in violations:
+                    name_short = v['system'][:38] if len(v['system']) > 38 else v['system']
+                    if v['u_decreased']:
+                        change = v['curr_u'] - v['prev_u']
+                        print(f"{name_short:<40} {'Undermining':<15} {v['prev_u']:>10,}   {v['curr_u']:>10,}   {change:>+10,}")
+                    if v['r_decreased']:
+                        change = v['curr_r'] - v['prev_r']
+                        print(f"{name_short:<40} {'Reinforcing':<15} {v['prev_r']:>10,}   {v['curr_r']:>10,}   {change:>+10,}")
+                print("\n" + "=" * 80)
+                print("These systems should be manually verified!")
+            else:
+                print("\nAll CP values are valid (no decreases detected)")
+                print(f"Compared {len([s for s in collected_systems.keys() if s in previous_data])} systems with previous capture")
+            print("=" * 80)
+        elif previous_data and not is_same_cycle:
+            print("\n" + "=" * 80)
+            print("CYCLE VALIDATION SKIPPED")
+            print("=" * 80)
+            print("\nPrevious capture is from a different cycle.")
+            print("CP values reset after Thursday 7am UTC tick - validation not applicable.")
             print("=" * 80)
     else:
         print("\nNo valid systems captured.")

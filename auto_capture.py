@@ -105,12 +105,12 @@ def find_and_click_system_in_dropdown(search_x, search_y, system_name, debug_ind
     screenshot = screenshot_full.crop((0, 0, dropdown_width, dropdown_height))
 
     # Save screenshot for debugging
-    debug_path = f"auto_capture_debug/dropdown/dropdown_{debug_index:03d}.png"
-    os.makedirs('auto_capture_debug/dropdown', exist_ok=True)
+    debug_path = f"auto_capture/debug/dropdown/dropdown_{debug_index:03d}.png"
+    os.makedirs('auto_capture/debug/dropdown', exist_ok=True)
     screenshot.save(debug_path)
 
     # Save debug info about the cropping
-    debug_info_path = f"auto_capture_debug/dropdown/dropdown_{debug_index:03d}_info.txt"
+    debug_info_path = f"auto_capture/debug/dropdown/dropdown_{debug_index:03d}_info.txt"
     with open(debug_info_path, 'w') as f:
         f.write(f"Max height captured: {dropdown_max_height}px\n")
         f.write(f"Detected dropdown height: {dropdown_height}px\n")
@@ -144,7 +144,7 @@ def find_and_click_system_in_dropdown(search_x, search_y, system_name, debug_ind
     cleaned = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
 
     # Save preprocessed image for debugging
-    preprocessed_path = f"auto_capture_debug/dropdown/dropdown_{debug_index:03d}_preprocessed.png"
+    preprocessed_path = f"auto_capture/debug/dropdown/dropdown_{debug_index:03d}_preprocessed.png"
     cv2.imwrite(preprocessed_path, cleaned)
 
     # Convert back to PIL for pytesseract
@@ -158,7 +158,7 @@ def find_and_click_system_in_dropdown(search_x, search_y, system_name, debug_ind
     )
 
     # Save OCR text for debugging
-    ocr_debug_path = f"auto_capture_debug/dropdown/dropdown_{debug_index:03d}_ocr.txt"
+    ocr_debug_path = f"auto_capture/debug/dropdown/dropdown_{debug_index:03d}_ocr.txt"
     with open(ocr_debug_path, 'w', encoding='utf-8') as f:
         f.write(f"Looking for: {system_name}\n")
         f.write("=" * 80 + "\n")
@@ -425,9 +425,8 @@ def main():
     print("=" * 80)
     print("\nThis script will automatically:")
     print("1. Read system names from input.txt")
-    print("2. Click the search field and enter each system")
-    print("3. Wait for the map to load")
-    print("4. Capture and parse the Powerplay information")
+    print("2. PHASE 1: Capture screenshots of all systems (fast)")
+    print("3. PHASE 2: Process screenshots with OCR (slower)")
     print("\n" + "=" * 80)
 
     # Create output files: main file + timestamped archive
@@ -476,16 +475,84 @@ def main():
     print("=" * 80)
 
     ocr = PowerplayOCR()
-    collected_systems = {}
 
-    # Create directories for debug output
-    os.makedirs('auto_capture_debug/cropped', exist_ok=True)
-    os.makedirs('auto_capture_debug/ocr_text', exist_ok=True)
-    os.makedirs('auto_capture_debug/subsections', exist_ok=True)
+    # Create directories for screenshots
+    os.makedirs('auto_capture/screenshots', exist_ok=True)
 
     # Search field coordinates from config
     SEARCH_X = config.SEARCH_FIELD_X
     SEARCH_Y = config.SEARCH_FIELD_Y
+
+    # =========================================================================
+    # PHASE 1: CAPTURE SCREENSHOTS (FAST - GAME INTERACTION)
+    # =========================================================================
+    print("\n" + "=" * 80)
+    print("PHASE 1: CAPTURING SCREENSHOTS")
+    print("=" * 80)
+
+    screenshot_mapping = {}  # Maps system_name -> screenshot_path
+
+    for i, system_name in enumerate(system_names, 1):
+        print(f"\n[{i}/{len(system_names)}] Capturing: {system_name}")
+
+        try:
+            # Click, paste, enter, wait
+            print(f"  -> Searching for system...")
+            click_and_paste(SEARCH_X, SEARCH_Y, system_name, i)
+
+            # Wait for map to load and display system info
+            print(f"  -> Waiting for map to load...")
+            time.sleep(1.0)
+
+            # Take screenshot only (no OCR yet)
+            print(f"  -> Taking screenshot...")
+            screenshot_path = ocr.take_screenshot()
+
+            # Save screenshot with system name
+            if screenshot_path:
+                import shutil
+
+                # Sanitize system name for filename (replace invalid chars)
+                safe_name = system_name.replace(' ', '_').replace('/', '-').replace('\\', '-')
+
+                # Save the full screenshot with system name
+                saved_path = f"auto_capture/screenshots/capture_{i:03d}_{safe_name}.png"
+                shutil.move(screenshot_path, saved_path)
+                screenshot_mapping[system_name] = (i, saved_path)
+
+                print(f"  -> [OK] Screenshot saved!")
+            else:
+                print(f"  -> [ERROR] Screenshot failed!")
+
+        except Exception as e:
+            print(f"  -> [ERROR] {str(e)}")
+
+        # Brief pause between systems
+        if i < len(system_names):
+            time.sleep(0.5)
+
+    print("\n" + "=" * 80)
+    print(f"PHASE 1 COMPLETE - CAPTURED {len(screenshot_mapping)}/{len(system_names)} SCREENSHOTS")
+    print("=" * 80)
+
+    # Play sound to indicate phase transition
+    play_success_sound()
+    time.sleep(0.3)
+    play_success_sound()
+
+    # =========================================================================
+    # PHASE 2: PROCESS SCREENSHOTS WITH OCR (OFFLINE)
+    # =========================================================================
+    print("\n" + "=" * 80)
+    print("PHASE 2: PROCESSING SCREENSHOTS WITH OCR")
+    print("=" * 80)
+    print("\nYou can now close Elite Dangerous if needed.")
+    print("Processing screenshots...")
+
+    # Create directories for debug output
+    os.makedirs('auto_capture/debug/cropped', exist_ok=True)
+    os.makedirs('auto_capture/debug/ocr_text', exist_ok=True)
+    os.makedirs('auto_capture/debug/subsections', exist_ok=True)
 
     # Initialize both output files with headers
     header = "System Name\tPower\tState\t\tUndermining\tReinforcement\tInitial CP\n"
@@ -494,24 +561,14 @@ def main():
     with open(archive_output_file, 'w', encoding='utf-8') as f:
         f.write(header)
 
-    # Process each system
-    for i, system_name in enumerate(system_names, 1):
+    collected_systems = {}
+
+    # Process each screenshot
+    for system_name, (i, screenshot_path) in screenshot_mapping.items():
         print(f"\n[{i}/{len(system_names)}] Processing: {system_name}")
 
         try:
-            # Step 1-4: Click, paste, enter, wait
-            print(f"  -> Searching for system...")
-            click_and_paste(SEARCH_X, SEARCH_Y, system_name, i)
-
-            # Wait for map to load and display system info
-            print(f"  -> Waiting for map to load (3 seconds)...")
-            time.sleep(1.5)
-
-            # Step 5: Take screenshot and parse
-            print(f"  -> Capturing screenshot...")
-            screenshot_path = ocr.take_screenshot()
-
-            print(f"  -> Parsing Powerplay information...")
+            print(f"  -> Running OCR...")
             info = ocr.extract_powerplay_auto(screenshot_path)
 
             # Detect initial control points from status bar (non-competitive states only)
@@ -533,7 +590,7 @@ def main():
                 cropped_img = ocr.crop_powerplay_panel(screenshot_path, extended=True)
             else:
                 cropped_img = ocr.crop_powerplay_panel(screenshot_path, extended=False)
-            cropped_path = f"auto_capture_debug/cropped/capture_{i:03d}.png"
+            cropped_path = f"auto_capture/debug/cropped/capture_{i:03d}.png"
             cropped_img.save(cropped_path)
 
             # Save subsections
@@ -542,11 +599,11 @@ def main():
             else:
                 subsections = ocr.crop_powerplay_subsections(screenshot_path)
             for section_name, section_img in subsections.items():
-                subsection_path = f"auto_capture_debug/subsections/capture_{i:03d}_{section_name}.png"
+                subsection_path = f"auto_capture/debug/subsections/capture_{i:03d}_{section_name}.png"
                 section_img.save(subsection_path)
 
             # Save OCR text
-            ocr_text_path = f"auto_capture_debug/ocr_text/capture_{i:03d}.txt"
+            ocr_text_path = f"auto_capture/debug/ocr_text/capture_{i:03d}.txt"
             with open(ocr_text_path, 'w', encoding='utf-8') as f:
                 f.write("=" * 80 + "\n")
                 f.write(f"CAPTURE #{i} - {system_name}\n")
@@ -608,9 +665,8 @@ def main():
                     f.write(excel_line + '\n')
 
                 print(f"  -> [OK] Data saved!")
-                play_success_sound()
 
-                # Delete original screenshot (keep cropped for debug)
+                # Delete original full screenshot (keep cropped for debug)
                 try:
                     os.remove(screenshot_path)
                 except:
@@ -632,19 +688,17 @@ def main():
 
                 print(f"  -> [ERROR] Invalid: Missing {', '.join(missing)}")
                 print(f"  -> Debug saved: {cropped_path}, {ocr_text_path}")
-                play_error_sound()
+
+                # Keep the original screenshot for debugging failed parses
+                # Don't delete it
 
         except Exception as e:
             print(f"  -> [ERROR] {str(e)}")
-            play_error_sound()
-
-        # Brief pause between systems
-        if i < len(system_names):
-            time.sleep(0.5)
+            # Keep the original screenshot for debugging errors
 
     # Print final summary
     print("\n" + "=" * 80)
-    print(f"AUTOMATION COMPLETE - CAPTURED {len(collected_systems)}/{len(system_names)} SYSTEMS")
+    print(f"PROCESSING COMPLETE - PARSED {len(collected_systems)}/{len(system_names)} SYSTEMS")
     print("=" * 80)
 
     if collected_systems:

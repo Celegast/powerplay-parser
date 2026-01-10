@@ -96,6 +96,7 @@ print(f"Loaded {len(current_data)} systems from current capture")
 # Compare values
 violations = []
 increases = []
+large_increases = []
 
 for system_name in sorted(current_data.keys()):
     if system_name not in previous_data:
@@ -129,6 +130,17 @@ for system_name in sorted(current_data.keys()):
                 'curr': current_u,
                 'change': change
             })
+            # Check for suspiciously large increases
+            if prev_u > 0:
+                ratio = current_u / prev_u
+                if ratio >= 9.0:
+                    large_increases.append({
+                        'system': system_name,
+                        'type': 'Undermining',
+                        'prev': prev_u,
+                        'curr': current_u,
+                        'ratio': ratio
+                    })
 
     if current_r >= 0 and prev_r >= 0 and current_r != prev_r:
         change = current_r - prev_r
@@ -148,6 +160,17 @@ for system_name in sorted(current_data.keys()):
                 'curr': current_r,
                 'change': change
             })
+            # Check for suspiciously large increases
+            if prev_r > 0:
+                ratio = current_r / prev_r
+                if ratio >= 9.0:
+                    large_increases.append({
+                        'system': system_name,
+                        'type': 'Reinforcing',
+                        'prev': prev_r,
+                        'curr': current_r,
+                        'ratio': ratio
+                    })
 
 if violations:
     print(f"\n{'='*80}")
@@ -160,6 +183,16 @@ if violations:
         print(f"{name_short:<40} {v['type']:<15} {v['prev']:>10,}   {v['curr']:>10,}   {v['change']:>+10,}")
 else:
     print(f"\nNo violations found (no CP decreases)")
+
+if large_increases:
+    print(f"\n{'='*80}")
+    print(f"LARGE INCREASES: {len(large_increases)} unusually large changes (possible extra digit)")
+    print(f"{'='*80}\n")
+    print(f"{'System Name':<40} {'Type':<15} {'Previous':<12} {'Current':<12} {'Ratio'}")
+    print("-" * 100)
+    for v in large_increases:
+        name_short = v['system'][:38] if len(v['system']) > 38 else v['system']
+        print(f"{name_short:<40} {v['type']:<15} {v['prev']:>10,}   {v['curr']:>10,}   {v['ratio']:>7.1f}x")
 
 if increases:
     print(f"\n{'='*80}")
@@ -176,7 +209,8 @@ print(f"\n{'='*80}")
 print(f"SUMMARY")
 print(f"{'='*80}")
 print(f"Total systems compared: {len([s for s in current_data.keys() if s in previous_data])}")
-print(f"  Unchanged:    {unchanged_count}")
-print(f"  Increased:    {len(increases)}")
-print(f"  DECREASED:    {len(violations)} {'<-- POTENTIAL OCR ERRORS' if violations else ''}")
+print(f"  Unchanged:       {unchanged_count}")
+print(f"  Increased:       {len(increases)}")
+print(f"  DECREASED:       {len(violations)} {'<-- POTENTIAL OCR ERRORS' if violations else ''}")
+print(f"  LARGE INCREASE:  {len(large_increases)} {'<-- VERIFY THESE' if large_increases else ''}")
 print(f"{'='*80}")

@@ -722,6 +722,8 @@ def main():
             print("=" * 80)
 
             violations = []
+            large_increases = []
+
             for system_name in sorted(collected_systems.keys()):
                 if system_name not in previous_data:
                     continue
@@ -749,6 +751,31 @@ def main():
                         'r_decreased': r_decreased
                     })
 
+                # Check for suspiciously large increases (possible extra digit added by OCR)
+                # Flag if increase is more than 9x the previous value (likely added a digit)
+                # 9x catches most cases where digit is added (e.g., 2489 -> 24889 = 10x)
+                if prev_u > 0 and current_u > 0:
+                    u_ratio = current_u / prev_u
+                    if u_ratio >= 9.0:  # Increased by 9x or more
+                        large_increases.append({
+                            'system': system_name,
+                            'type': 'Undermining',
+                            'prev': prev_u,
+                            'curr': current_u,
+                            'ratio': u_ratio
+                        })
+
+                if prev_r > 0 and current_r > 0:
+                    r_ratio = current_r / prev_r
+                    if r_ratio >= 9.0:  # Increased by 9x or more
+                        large_increases.append({
+                            'system': system_name,
+                            'type': 'Reinforcing',
+                            'prev': prev_r,
+                            'curr': current_r,
+                            'ratio': r_ratio
+                        })
+
             if violations:
                 print(f"\nWARNING: {len(violations)} system(s) with DECREASED CP (possible OCR errors):\n")
                 print(f"{'System Name':<40} {'Type':<15} {'Previous':<12} {'Current':<12} {'Change'}")
@@ -763,8 +790,20 @@ def main():
                         print(f"{name_short:<40} {'Reinforcing':<15} {v['prev_r']:>10,}   {v['curr_r']:>10,}   {change:>+10,}")
                 print("\n" + "=" * 80)
                 print("These systems should be manually verified!")
-            else:
-                print("\nAll CP values are valid (no decreases detected)")
+
+            if large_increases:
+                print(f"\n{'='*80}")
+                print(f"WARNING: {len(large_increases)} system(s) with LARGE INCREASES (possible extra digit):\n")
+                print(f"{'System Name':<40} {'Type':<15} {'Previous':<12} {'Current':<12} {'Ratio'}")
+                print("-" * 100)
+                for v in large_increases:
+                    name_short = v['system'][:38] if len(v['system']) > 38 else v['system']
+                    print(f"{name_short:<40} {v['type']:<15} {v['prev']:>10,}   {v['curr']:>10,}   {v['ratio']:>7.1f}x")
+                print("\n" + "=" * 80)
+                print("These increases are unusually large - verify they are correct!")
+
+            if not violations and not large_increases:
+                print("\nAll CP values are valid (no issues detected)")
                 print(f"Compared {len([s for s in collected_systems.keys() if s in previous_data])} systems with previous capture")
             print("=" * 80)
         elif previous_data and not is_same_cycle:

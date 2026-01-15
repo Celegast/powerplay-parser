@@ -275,6 +275,13 @@ class PowerplayOCR:
                 'right': int(672 * width_scale),
                 'bottom': int(474 * height_scale),
                 'description': 'Both undermining and reinforcing control points'
+            },
+            'data_age': {
+                'left': int(500 * width_scale),
+                'top': int(105 * height_scale),
+                'right': int(736 * width_scale),
+                'bottom': int(134 * height_scale),
+                'description': 'Data age (X MINUTES AGO)'
             }
         }
 
@@ -403,6 +410,13 @@ class PowerplayOCR:
                 'right': int(170 * width_scale),
                 'bottom': int(674 * height_scale),
                 'description': 'Your power rank (1st, 2nd, 3rd)'
+            },
+            'data_age': {
+                'left': int(500 * width_scale),
+                'top': int(105 * height_scale),
+                'right': int(736 * width_scale),
+                'bottom': int(134 * height_scale),
+                'description': 'Data age (X MINUTES AGO)'
             }
         }
 
@@ -685,7 +699,8 @@ class PowerplayOCR:
             'opposing_power': '',
             'system_status': '',
             'undermining_points': -1,
-            'reinforcing_points': -1
+            'reinforcing_points': -1,
+            'data_age_minutes': -1
         }
 
         # Process system name section - PSM 7 (single line), threshold for text clarity
@@ -913,6 +928,28 @@ class PowerplayOCR:
                 except:
                     pass
 
+        # Process data_age section - "X MINUTES AGO"
+        if 'data_age' in subsections:
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                tmp_path = tmp.name
+                subsections['data_age'].save(tmp_path)
+
+            try:
+                text = pytesseract.image_to_string(
+                    self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
+                    config='--oem 3 --psm 7 --dpi 300'
+                ).strip().upper()
+
+                # Parse "X MINUTES AGO" format
+                minutes_match = re.search(r'(\d+)\s*MINUTES?\s*AGO', text)
+                if minutes_match:
+                    info['data_age_minutes'] = int(minutes_match.group(1))
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
+
         return info
 
     def extract_powerplay_competitive(self, image_path):
@@ -941,7 +978,8 @@ class PowerplayOCR:
             'your_power': '',
             'your_rank': '',
             'undermining_points': -1,  # Not applicable for competitive states
-            'reinforcing_points': -1   # Not applicable for competitive states
+            'reinforcing_points': -1,  # Not applicable for competitive states
+            'data_age_minutes': -1
         }
 
         # Process system name section - same as standard states
@@ -1168,6 +1206,28 @@ class PowerplayOCR:
                         break
 
                 info['your_rank'] = best_rank
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
+
+        # Process data_age section - "X MINUTES AGO"
+        if 'data_age' in subsections:
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                tmp_path = tmp.name
+                subsections['data_age'].save(tmp_path)
+
+            try:
+                text = pytesseract.image_to_string(
+                    self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
+                    config='--oem 3 --psm 7 --dpi 300'
+                ).strip().upper()
+
+                # Parse "X MINUTES AGO" format
+                minutes_match = re.search(r'(\d+)\s*MINUTES?\s*AGO', text)
+                if minutes_match:
+                    info['data_age_minutes'] = int(minutes_match.group(1))
             finally:
                 try:
                     os.unlink(tmp_path)

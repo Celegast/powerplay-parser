@@ -552,14 +552,15 @@ def main():
     os.makedirs('auto_capture/debug/ocr_text', exist_ok=True)
     os.makedirs('auto_capture/debug/subsections', exist_ok=True)
 
-    # Initialize both output files with headers
-    header = "System Name\tPower\tState\t\tUndermining\tReinforcement\tInitial CP\n"
+    # Initialize both output files with headers (placeholder - will be updated with data_age)
+    header_base = "System Name\tPower\tState\t\tUndermining\tReinforcement\tInitial CP"
     with open(main_output_file, 'w', encoding='utf-8') as f:
-        f.write(header)
+        f.write(header_base + "\n")
     with open(archive_output_file, 'w', encoding='utf-8') as f:
-        f.write(header)
+        f.write(header_base + "\n")
 
     collected_systems = {}
+    last_data_age = None  # Track data age from most recent screenshot
 
     # Process each screenshot
     for system_name, (i, screenshot_path) in screenshot_mapping.items():
@@ -568,6 +569,10 @@ def main():
         try:
             print(f"  -> Running OCR...")
             info = ocr.extract_powerplay_auto(screenshot_path)
+
+            # Update data_age from each screenshot (keep the last one)
+            if info.get('data_age_minutes', -1) >= 0:
+                last_data_age = info['data_age_minutes']
 
             # Detect initial control points from status bar (non-competitive states only)
             is_competitive = 'powers' in info and info['powers']
@@ -694,13 +699,36 @@ def main():
             print(f"  -> [ERROR] {str(e)}")
             # Keep the original screenshot for debugging errors
 
+    # Update output files with data_age on separate line above header
+    if last_data_age is not None and last_data_age >= 0:
+        data_age_line = f"{last_data_age} minutes ago"
+    else:
+        data_age_line = None
+
+    # Rewrite the files with data_age line above header
+    for output_file in [main_output_file, archive_output_file]:
+        with open(output_file, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        # Insert data_age line before header, replace old header
+        if lines:
+            if data_age_line:
+                lines[0] = f"{data_age_line}\n{header_base}\n"
+            else:
+                lines[0] = f"{header_base}\n"
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.writelines(lines)
+
     # Print final summary
     print("\n" + "=" * 80)
     print(f"PROCESSING COMPLETE - PARSED {len(collected_systems)}/{len(system_names)} SYSTEMS")
+    if last_data_age is not None and last_data_age >= 0:
+        print(f"Data age: {last_data_age} minutes ago")
     print("=" * 80)
 
     if collected_systems:
-        print("\nSystem Name\tPower\tState\t\tUndermining\tReinforcement\tInitial CP")
+        if data_age_line:
+            print(f"\n{data_age_line}")
+        print(header_base)
         print("-" * 100)
         for system_name in sorted(collected_systems.keys()):
             info = collected_systems[system_name]

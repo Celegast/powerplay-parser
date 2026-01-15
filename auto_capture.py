@@ -537,8 +537,6 @@ def main():
 
     # Play sound to indicate phase transition
     play_success_sound()
-    time.sleep(0.3)
-    play_success_sound()
 
     # =========================================================================
     # PHASE 2: PROCESS SCREENSHOTS WITH OCR (OFFLINE)
@@ -817,6 +815,11 @@ def main():
         print("\nNo valid systems captured.")
 
     print("\nDone!")
+
+    # Play sound to indicate that parsing has finished
+    play_success_sound()
+    time.sleep(0.3)
+    play_success_sound()
 
 if __name__ == "__main__":
     main()

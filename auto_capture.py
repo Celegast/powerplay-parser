@@ -8,6 +8,7 @@ Reads system names from input.txt and automatically captures each one
 import os
 import random
 import time
+from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 
 # Third-party imports
@@ -699,9 +700,11 @@ def main():
             print(f"  -> [ERROR] {str(e)}")
             # Keep the original screenshot for debugging errors
 
-    # Update output files with data_age on separate line above header
+    # Update output files with data timestamp on separate line above header
     if last_data_age is not None and last_data_age >= 0:
-        data_age_line = f"{last_data_age} minutes ago"
+        # Calculate actual timestamp from current time minus data age
+        data_time = datetime.now(timezone.utc) - timedelta(minutes=last_data_age)
+        data_age_line = data_time.strftime("%Y-%m-%d %H:%M UTC")
     else:
         data_age_line = None
 
@@ -721,8 +724,8 @@ def main():
     # Print final summary
     print("\n" + "=" * 80)
     print(f"PROCESSING COMPLETE - PARSED {len(collected_systems)}/{len(system_names)} SYSTEMS")
-    if last_data_age is not None and last_data_age >= 0:
-        print(f"Data age: {last_data_age} minutes ago")
+    if data_age_line:
+        print(f"Data timestamp: {data_age_line}")
     print("=" * 80)
 
     if collected_systems:

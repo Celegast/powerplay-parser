@@ -22,13 +22,6 @@ def get_cycle_number():
     return 1 + weeks_since_cycle_1
 
 
-def get_data_timestamp(data_age_minutes):
-    """Calculate the timestamp of the data based on minutes ago."""
-    now = datetime.now(timezone.utc)
-    data_time = now - timedelta(minutes=data_age_minutes)
-    return data_time.strftime("%Y-%m-%d %H:%M UTC")
-
-
 def calculate_decay(state, initial_cp):
     """
     Calculate decay based on system state and initial CP.
@@ -64,7 +57,7 @@ def parse_powerplay_file(filepath):
         'decay': 0
     })
 
-    data_age_minutes = None
+    data_timestamp = None  # Store as timestamp string
 
     with open(filepath, 'r', encoding='utf-8') as f:
         lines = f.readlines()
@@ -74,13 +67,24 @@ def parse_powerplay_file(filepath):
         if not line:
             continue
 
-        # First line might be data age
-        if i == 0 and 'minutes ago' in line.lower():
-            # Extract the number of minutes
+        # First line might be data age in one of two formats:
+        # 1. "X minutes ago" (old format)
+        # 2. "YYYY-MM-DD HH:MM UTC" (new format)
+        if i == 0:
+            # Try old format: "X minutes ago"
             match = re.search(r'(\d+)\s*minutes?\s*ago', line.lower())
             if match:
                 data_age_minutes = int(match.group(1))
-            continue
+                # Convert to timestamp
+                data_time = datetime.now(timezone.utc) - timedelta(minutes=data_age_minutes)
+                data_timestamp = data_time.strftime("%Y-%m-%d %H:%M UTC")
+                continue
+
+            # Try new format: "YYYY-MM-DD HH:MM UTC"
+            match = re.search(r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s*UTC', line)
+            if match:
+                data_timestamp = line.strip()
+                continue
 
         # Skip header line
         if line.startswith('System Name'):
@@ -129,7 +133,7 @@ def parse_powerplay_file(filepath):
         elif 'EXPLOITED' in state:
             powers[power]['exploited'] += 1
 
-    return powers, data_age_minutes
+    return powers, data_timestamp
 
 
 def format_number(n):
@@ -143,16 +147,12 @@ def format_kilo(n):
     return f"{rounded // 1000}k"
 
 
-def print_summary(powers, data_age_minutes=None):
+def print_summary(powers, data_timestamp=None):
     """Print summary table"""
-    # Print data age line
-    if data_age_minutes is not None:
-        print(f"{data_age_minutes} minutes ago")
-        print()
-        # Print info line: Cycle X - Enclave - timestamp
+    # Print info line: Cycle X - Enclave - timestamp
+    if data_timestamp is not None:
         cycle_num = get_cycle_number()
-        timestamp = get_data_timestamp(data_age_minutes)
-        print(f"Cycle {cycle_num} - Enclave - {timestamp}")
+        print(f"Cycle {cycle_num} - Enclave - {data_timestamp}")
         print()
 
     # Header: Power, SH/FF/EX, RF, UM (net), ~Decay

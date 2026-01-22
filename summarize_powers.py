@@ -155,9 +155,9 @@ def print_summary(powers, data_timestamp=None):
         print(f"Cycle {cycle_num} - Enclave - {data_timestamp}")
         print()
 
-    # Header: Power, SH/FF/EX, RF, UM (net), ~Decay
-    print(f"{'Power':<25} {'SH/FF/EX':>10} {'RF':>10} {'(net) UM':>10} {'~Decay':>10}")
-    print("-" * 70)
+    # Header: Power, SH/FF/EX, RF, UM (net), UM%, ~Decay
+    print(f"{'Power':<25} {'SH/FF/EX':>10} {'RF':>10} {'(net) UM':>10} {'UM%':>7} {'~Decay':>10}")
+    print("-" * 78)
 
     # Sort by systems: Stronghold (desc), Fortified (desc), Exploited (desc)
     sorted_powers = sorted(powers.keys(), key=lambda p: (
@@ -169,10 +169,11 @@ def print_summary(powers, data_timestamp=None):
     for power in sorted_powers:
         data = powers[power]
         systems = f"{data['stronghold']}/{data['fortified']}/{data['exploited']}"
-        print(f"{power:<25} {systems:>10} {format_kilo(data['reinforcement']):>10} {format_kilo(data['undermining']):>10} {format_kilo(data['decay']):>10}")
+        um_pct = (data['undermining'] / data['reinforcement'] * 100) if data['reinforcement'] > 0 else 0
+        print(f"{power:<25} {systems:>10} {format_kilo(data['reinforcement']):>10} {format_kilo(data['undermining']):>10} {um_pct:>6.1f}% {format_kilo(data['decay']):>10}")
 
     # Totals
-    print("-" * 70)
+    print("-" * 78)
     total_und = sum(p['undermining'] for p in powers.values())
     total_rei = sum(p['reinforcement'] for p in powers.values())
     total_dec = sum(p['decay'] for p in powers.values())
@@ -180,7 +181,8 @@ def print_summary(powers, data_timestamp=None):
     total_f = sum(p['fortified'] for p in powers.values())
     total_e = sum(p['exploited'] for p in powers.values())
     systems_total = f"{total_s}/{total_f}/{total_e}"
-    print(f"{'TOTAL':<25} {systems_total:>10} {format_kilo(total_rei):>10} {format_kilo(total_und):>10} {format_kilo(total_dec):>10}")
+    total_um_pct = (total_und / total_rei * 100) if total_rei > 0 else 0
+    print(f"{'TOTAL':<25} {systems_total:>10} {format_kilo(total_rei):>10} {format_kilo(total_und):>10} {total_um_pct:>6.1f}% {format_kilo(total_dec):>10}")
 
 
 def main():

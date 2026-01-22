@@ -6,6 +6,7 @@ Calculates decay based on system state and initial CP using known formulas
 
 import sys
 import re
+import argparse
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
@@ -56,6 +57,9 @@ def parse_powerplay_file(filepath):
         'exploited': 0,
         'decay': 0
     })
+
+    # Also store per-system data
+    systems = []
 
     data_timestamp = None  # Store as timestamp string
 
@@ -120,6 +124,17 @@ def parse_powerplay_file(filepath):
         decay = calculate_decay(state, initial_cp)
         undermining_adjusted = max(0, undermining - decay)
 
+        # Store per-system data
+        systems.append({
+            'name': system_name,
+            'power': power,
+            'state': state,
+            'reinforcement': reinforcement,
+            'undermining': undermining_adjusted,
+            'decay': decay,
+            'initial_cp': initial_cp
+        })
+
         # Accumulate totals
         powers[power]['undermining'] += undermining_adjusted
         powers[power]['reinforcement'] += reinforcement
@@ -133,7 +148,7 @@ def parse_powerplay_file(filepath):
         elif 'EXPLOITED' in state:
             powers[power]['exploited'] += 1
 
-    return powers, data_timestamp
+    return powers, systems, data_timestamp
 
 
 def format_number(n):
@@ -185,26 +200,81 @@ def print_summary(powers, data_timestamp=None):
     print(f"{'TOTAL':<25} {systems_total:>10} {format_kilo(total_rei):>10} {format_kilo(total_und):>10} {total_um_pct:>6.1f}% {format_kilo(total_dec):>10}")
 
 
-def main():
-    # Default file path
-    filepath = 'powerplay_auto_capture.txt'
+def print_power_details(systems, power_name="Pranav Antal"):
+    """Print detailed system information for a specific power"""
+    # Filter systems for this power
+    power_systems = [s for s in systems if s['power'] == power_name]
 
-    # Allow custom file path as argument
-    if len(sys.argv) > 1:
-        filepath = sys.argv[1]
+    if not power_systems:
+        print(f"\nNo systems found for {power_name}")
+        return
+
+    print(f"\n\n{'='*78}")
+    print(f"{power_name} - System Details")
+    print(f"{'='*78}\n")
+
+    # Header
+    print(f"{'System Name':<35} {'State':<12} {'RF':>10} {'(net) UM':>10} {'UM%':>7} {'~Decay':>10}")
+    print("-" * 90)
+
+    # Sort by state priority (Stronghold > Fortified > Exploited), then by name
+    state_priority = {'STRONGHOLD': 0, 'FORTIFIED': 1, 'EXPLOITED': 2}
+    sorted_systems = sorted(power_systems, key=lambda s: (
+        state_priority.get(s['state'], 99),
+        s['name']
+    ))
+
+    for sys_data in sorted_systems:
+        name = sys_data['name']
+        if len(name) > 33:
+            name = name[:30] + "..."
+        state = sys_data['state'].capitalize()
+        rf = sys_data['reinforcement']
+        um = sys_data['undermining']
+        decay = sys_data['decay']
+        um_pct = (um / rf * 100) if rf > 0 else 0
+        print(f"{name:<35} {state:<12} {format_kilo(rf):>10} {format_kilo(um):>10} {um_pct:>6.1f}% {format_kilo(decay):>10}")
+
+    # Totals for this power
+    print("-" * 90)
+    total_rf = sum(s['reinforcement'] for s in power_systems)
+    total_um = sum(s['undermining'] for s in power_systems)
+    total_decay = sum(s['decay'] for s in power_systems)
+    total_um_pct = (total_um / total_rf * 100) if total_rf > 0 else 0
+    print(f"{'TOTAL':<35} {'':<12} {format_kilo(total_rf):>10} {format_kilo(total_um):>10} {total_um_pct:>6.1f}% {format_kilo(total_decay):>10}")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Summarize powerplay data by power with detailed system breakdown'
+    )
+    parser.add_argument(
+        'filepath',
+        nargs='?',
+        default='powerplay_auto_capture.txt',
+        help='Path to the powerplay capture file (default: powerplay_auto_capture.txt)'
+    )
+    parser.add_argument(
+        '-p', '--power',
+        default='Pranav Antal',
+        help='Power name for detailed system view (default: Pranav Antal)'
+    )
+
+    args = parser.parse_args()
 
     try:
-        powers, data_age = parse_powerplay_file(filepath)
+        powers, systems, data_timestamp = parse_powerplay_file(args.filepath)
 
         if not powers:
-            print(f"No data found in {filepath}")
+            print(f"No data found in {args.filepath}")
             return 1
 
-        print_summary(powers, data_age)
+        print_summary(powers, data_timestamp)
+        print_power_details(systems, args.power)
         return 0
 
     except FileNotFoundError:
-        print(f"Error: File not found: {filepath}")
+        print(f"Error: File not found: {args.filepath}")
         return 1
     except Exception as e:
         print(f"Error: {e}")

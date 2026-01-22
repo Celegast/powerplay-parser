@@ -16,10 +16,11 @@ from datetime import datetime, timedelta, timezone
 CYCLE_1_START = datetime(2024, 10, 31, 7, 0, 0, tzinfo=timezone.utc)
 
 
-def get_cycle_number():
-    """Calculate the current powerplay cycle number."""
-    now = datetime.now(timezone.utc)
-    weeks_since_cycle_1 = (now - CYCLE_1_START).days // 7
+def get_cycle_number(reference_time=None):
+    """Calculate the powerplay cycle number for a given time."""
+    if reference_time is None:
+        reference_time = datetime.now(timezone.utc)
+    weeks_since_cycle_1 = (reference_time - CYCLE_1_START).days // 7
     return 1 + weeks_since_cycle_1
 
 
@@ -166,7 +167,15 @@ def print_summary(powers, data_timestamp=None):
     """Print summary table"""
     # Print info line: Cycle X - Enclave - timestamp
     if data_timestamp is not None:
-        cycle_num = get_cycle_number()
+        # Parse timestamp to calculate correct cycle number
+        # Format: "YYYY-MM-DD HH:MM UTC"
+        match = re.search(r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})', data_timestamp)
+        if match:
+            data_time = datetime.strptime(match.group(1), "%Y-%m-%d %H:%M")
+            data_time = data_time.replace(tzinfo=timezone.utc)
+            cycle_num = get_cycle_number(data_time)
+        else:
+            cycle_num = get_cycle_number()
         print(f"Cycle {cycle_num} - Enclave - {data_timestamp}")
         print()
 

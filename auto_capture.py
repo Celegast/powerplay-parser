@@ -265,12 +265,13 @@ def get_cycle_tick_time(reference_time):
     Returns:
         datetime object representing the most recent Thursday 7am UTC
     """
-    from datetime import timedelta, timezone
+    from datetime import datetime, timedelta, timezone
 
     # Get the reference time in UTC
     if reference_time.tzinfo is None:
         # Assume local time, convert to UTC
-        reference_utc = reference_time.replace(tzinfo=timezone.utc)
+        local_tz = datetime.now().astimezone().tzinfo
+        reference_utc = reference_time.replace(tzinfo=local_tz).astimezone(timezone.utc)
     else:
         reference_utc = reference_time.astimezone(timezone.utc)
 

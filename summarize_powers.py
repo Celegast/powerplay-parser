@@ -179,9 +179,8 @@ def print_summary(powers, data_timestamp=None):
         print(f"Cycle {cycle_num} - Enclave - {data_timestamp}")
         print()
 
-    # Header: Power, SH/FF/EX, RF, UM (net), UM%, ~Decay
-    print(f"{'Power':<25} {'SH/FF/EX':>10} {'RF':>10} {'(net) UM':>10} {'UM%':>7} {'~Decay':>10}")
-    print("-" * 78)
+    # Calculate column widths
+    col_power = max(len("Power"), max(len(p) for p in powers.keys()))
 
     # Sort by systems: Stronghold (desc), Fortified (desc), Exploited (desc)
     sorted_powers = sorted(powers.keys(), key=lambda p: (
@@ -190,23 +189,40 @@ def print_summary(powers, data_timestamp=None):
         -powers[p]['exploited']
     ))
 
-    for power in sorted_powers:
-        data = powers[power]
-        systems = f"{data['stronghold']}/{data['fortified']}/{data['exploited']}"
-        um_pct = (data['undermining'] / data['reinforcement'] * 100) if data['reinforcement'] > 0 else 0
-        print(f"{power:<25} {systems:>10} {format_kilo(data['reinforcement']):>10} {format_kilo(data['undermining']):>10} {um_pct:>6.1f}% {format_kilo(data['decay']):>10}")
-
-    # Totals
-    print("-" * 78)
-    total_und = sum(p['undermining'] for p in powers.values())
-    total_rei = sum(p['reinforcement'] for p in powers.values())
-    total_dec = sum(p['decay'] for p in powers.values())
+    # Calculate totals for systems column width
     total_s = sum(p['stronghold'] for p in powers.values())
     total_f = sum(p['fortified'] for p in powers.values())
     total_e = sum(p['exploited'] for p in powers.values())
     systems_total = f"{total_s}/{total_f}/{total_e}"
+
+    col_sys = max(len("SH/FF/EX"), len(systems_total),
+                  max(len(f"{powers[p]['stronghold']}/{powers[p]['fortified']}/{powers[p]['exploited']}") for p in powers.keys()))
+
+    # Fixed widths for numeric columns
+    col_rf = 6
+    col_um = 8
+    col_pct = 6
+    col_dec = 7
+
+    total_width = col_power + col_sys + col_rf + col_um + col_pct + col_dec + 5  # 5 spaces between columns
+
+    # Header
+    print(f"{'Power':<{col_power}} {'SH/FF/EX':>{col_sys}} {'RF':>{col_rf}} {'(net) UM':>{col_um}} {'UM%':>{col_pct}} {'~Decay':>{col_dec}}")
+    print("-" * total_width)
+
+    for power in sorted_powers:
+        data = powers[power]
+        systems = f"{data['stronghold']}/{data['fortified']}/{data['exploited']}"
+        um_pct = (data['undermining'] / data['reinforcement'] * 100) if data['reinforcement'] > 0 else 0
+        print(f"{power:<{col_power}} {systems:>{col_sys}} {format_kilo(data['reinforcement']):>{col_rf}} {format_kilo(data['undermining']):>{col_um}} {um_pct:>{col_pct - 1}.1f}% {format_kilo(data['decay']):>{col_dec}}")
+
+    # Totals
+    print("-" * total_width)
+    total_und = sum(p['undermining'] for p in powers.values())
+    total_rei = sum(p['reinforcement'] for p in powers.values())
+    total_dec = sum(p['decay'] for p in powers.values())
     total_um_pct = (total_und / total_rei * 100) if total_rei > 0 else 0
-    print(f"{'TOTAL':<25} {systems_total:>10} {format_kilo(total_rei):>10} {format_kilo(total_und):>10} {total_um_pct:>6.1f}% {format_kilo(total_dec):>10}")
+    print(f"{'TOTAL':<{col_power}} {systems_total:>{col_sys}} {format_kilo(total_rei):>{col_rf}} {format_kilo(total_und):>{col_um}} {total_um_pct:>{col_pct - 1}.1f}% {format_kilo(total_dec):>{col_dec}}")
 
 
 def print_power_details(systems, power_name="Pranav Antal"):
@@ -218,13 +234,25 @@ def print_power_details(systems, power_name="Pranav Antal"):
         print(f"\nNo systems found for {power_name}")
         return
 
-    print(f"\n\n{'='*78}")
+    # Calculate column widths
+    col_name = max(len("System"), max(len(s['name']) for s in power_systems)) + 1
+    col_state = max(len("State"), max(len(s['state']) for s in power_systems))
+
+    # Fixed widths for numeric columns
+    col_rf = 6
+    col_um = 8
+    col_pct = 6
+    col_dec = 7
+
+    total_width = col_name + col_state + col_rf + col_um + col_pct + col_dec + 5
+
+    print(f"\n\n{'=' * total_width}")
     print(f"{power_name} - System Details")
-    print(f"{'='*78}\n")
+    print(f"{'=' * total_width}\n")
 
     # Header
-    print(f"{'System Name':<35} {'State':<12} {'RF':>10} {'(net) UM':>10} {'UM%':>7} {'~Decay':>10}")
-    print("-" * 90)
+    print(f"{'System':<{col_name}} {'State':<{col_state}} {'RF':>{col_rf}} {'(net) UM':>{col_um}} {'UM%':>{col_pct}} {'~Decay':>{col_dec}}")
+    print("-" * total_width)
 
     # Sort by state priority (Stronghold > Fortified > Exploited), then by name
     state_priority = {'STRONGHOLD': 0, 'FORTIFIED': 1, 'EXPLOITED': 2}
@@ -235,22 +263,20 @@ def print_power_details(systems, power_name="Pranav Antal"):
 
     for sys_data in sorted_systems:
         name = sys_data['name']
-        if len(name) > 33:
-            name = name[:30] + "..."
         state = sys_data['state'].capitalize()
         rf = sys_data['reinforcement']
         um = sys_data['undermining']
         decay = sys_data['decay']
         um_pct = (um / rf * 100) if rf > 0 else 0
-        print(f"{name:<35} {state:<12} {format_kilo(rf):>10} {format_kilo(um):>10} {um_pct:>6.1f}% {format_kilo(decay):>10}")
+        print(f"{name:<{col_name}} {state:<{col_state}} {format_kilo(rf):>{col_rf}} {format_kilo(um):>{col_um}} {um_pct:>{col_pct - 1}.1f}% {format_kilo(decay):>{col_dec}}")
 
     # Totals for this power
-    print("-" * 90)
+    print("-" * total_width)
     total_rf = sum(s['reinforcement'] for s in power_systems)
     total_um = sum(s['undermining'] for s in power_systems)
     total_decay = sum(s['decay'] for s in power_systems)
     total_um_pct = (total_um / total_rf * 100) if total_rf > 0 else 0
-    print(f"{'TOTAL':<35} {'':<12} {format_kilo(total_rf):>10} {format_kilo(total_um):>10} {total_um_pct:>6.1f}% {format_kilo(total_decay):>10}")
+    print(f"{'TOTAL':<{col_name}} {'':<{col_state}} {format_kilo(total_rf):>{col_rf}} {format_kilo(total_um):>{col_um}} {total_um_pct:>{col_pct - 1}.1f}% {format_kilo(total_decay):>{col_dec}}")
 
 
 def main():

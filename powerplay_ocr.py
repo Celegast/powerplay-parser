@@ -66,27 +66,22 @@ class PowerplayOCR:
             raise ValueError(f"Could not load image: {image_path}")
         height, width = img.shape[:2]
 
-        # Use coordinates from config
-        # All values based on 5120x1440 resolution with automatic scaling
-        expected_width = config.EXPECTED_SCREEN_WIDTH
-        expected_height = config.EXPECTED_SCREEN_HEIGHT
+        # Config X coordinates are in the 16:9-zone-relative space at EXPECTED_SCREEN_HEIGHT.
+        # Scale by height ratio; add ultrawide x_offset for screens wider than 16:9.
+        scale = height / config.EXPECTED_SCREEN_HEIGHT
+        x_offset = max(0, (width - height * 16 / 9) / 2)
 
-        # Calculate scaling factors
-        width_scale = width / expected_width
-        height_scale = height / expected_height
-
-        # Apply scaling to coordinates
-        left = int(config.PANEL_LEFT * width_scale)
-        top = int(config.PANEL_TOP * height_scale)
+        left = int(x_offset + config.PANEL_LEFT * scale)
+        top = int(config.PANEL_TOP * scale)
 
         if extended:
             # Extended panel for EXPANSION/CONTESTED (742×840)
-            right = int(config.PANEL_RIGHT_EXTENDED * width_scale)
-            bottom = int(config.PANEL_BOTTOM_EXTENDED * height_scale)
+            right = int(x_offset + config.PANEL_RIGHT_EXTENDED * scale)
+            bottom = int(config.PANEL_BOTTOM_EXTENDED * scale)
         else:
             # Standard panel (740×646)
-            right = int(config.PANEL_RIGHT_STANDARD * width_scale)
-            bottom = int(config.PANEL_BOTTOM_STANDARD * height_scale)
+            right = int(x_offset + config.PANEL_RIGHT_STANDARD * scale)
+            bottom = int(config.PANEL_BOTTOM_STANDARD * scale)
 
         # Crop the image
         cropped = img[top:bottom, left:right]
@@ -1270,13 +1265,13 @@ class PowerplayOCR:
             if width > 2000:
                 # Full screenshot - crop to status region
                 # Status is at roughly (PANEL_LEFT+14, PANEL_TOP+212) to (PANEL_LEFT+734, PANEL_TOP+280)
-                width_scale = width / config.EXPECTED_SCREEN_WIDTH
-                height_scale = height / config.EXPECTED_SCREEN_HEIGHT
+                scale = height / config.EXPECTED_SCREEN_HEIGHT
+                x_offset = max(0, (width - height * 16 / 9) / 2)
 
-                left = int((config.PANEL_LEFT + 14) * width_scale)
-                top = int((config.PANEL_TOP + 212) * height_scale)
-                right = int((config.PANEL_LEFT + 734) * width_scale)
-                bottom = int((config.PANEL_TOP + 280) * height_scale)
+                left = int(x_offset + (config.PANEL_LEFT + 14) * scale)
+                top = int((config.PANEL_TOP + 212) * scale)
+                right = int(x_offset + (config.PANEL_LEFT + 734) * scale)
+                bottom = int((config.PANEL_TOP + 280) * scale)
 
                 status_region = img[top:bottom, left:right]
             else:

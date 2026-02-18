@@ -52,11 +52,13 @@ def find_and_click_system_in_dropdown(search_x, search_y, system_name, debug_ind
     from PIL import Image
 
     # Dropdown appears below the search field
-    # Use configuration values for dropdown positioning
-    dropdown_left = search_x + config.DROPDOWN_OFFSET_X
-    dropdown_top = search_y + config.DROPDOWN_OFFSET_Y
-    dropdown_width = config.DROPDOWN_WIDTH
-    dropdown_max_height = config.DROPDOWN_MAX_HEIGHT
+    # Config values are in reference pixels at 1440 height; scale to actual screen height
+    _, actual_height = pyautogui.size()
+    scale = actual_height / config.EXPECTED_SCREEN_HEIGHT
+    dropdown_left = search_x + int(config.DROPDOWN_OFFSET_X * scale)
+    dropdown_top = search_y + int(config.DROPDOWN_OFFSET_Y * scale)
+    dropdown_width = int(config.DROPDOWN_WIDTH * scale)
+    dropdown_max_height = int(config.DROPDOWN_MAX_HEIGHT * scale)
 
     # Take screenshot of dropdown area immediately (dropdown should already be visible)
     screenshot_full = pyautogui.screenshot(region=(dropdown_left, dropdown_top, dropdown_width, dropdown_max_height))
@@ -481,9 +483,12 @@ def main():
     # Create directories for screenshots
     os.makedirs('auto_capture/screenshots', exist_ok=True)
 
-    # Search field coordinates from config
-    SEARCH_X = config.SEARCH_FIELD_X
-    SEARCH_Y = config.SEARCH_FIELD_Y
+    # Search field coordinates: scale config values to actual screen resolution
+    actual_width, actual_height = pyautogui.size()
+    _scale = actual_height / config.EXPECTED_SCREEN_HEIGHT
+    _x_offset = max(0, (actual_width - actual_height * 16 / 9) / 2)
+    SEARCH_X = int(_x_offset + config.SEARCH_FIELD_X * _scale)
+    SEARCH_Y = int(config.SEARCH_FIELD_Y * _scale)
 
     # =========================================================================
     # PHASE 1: CAPTURE SCREENSHOTS (FAST - GAME INTERACTION)

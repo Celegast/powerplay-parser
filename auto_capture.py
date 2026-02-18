@@ -224,8 +224,8 @@ def find_and_click_system_in_dropdown(search_x, search_y, system_name, debug_ind
 
     if match_index >= 0:
         # Calculate click position
-        # Each line is approximately 30-40 pixels tall
-        line_height = 38
+        # Each line is approximately 38 pixels tall at reference height (1440); scale to actual
+        line_height = int(38 * scale)
         click_y = dropdown_top + (match_index * line_height) + (line_height // 2)
         click_x = dropdown_left + (dropdown_width // 2)
 

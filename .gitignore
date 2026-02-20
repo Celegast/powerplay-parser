@@ -40,6 +40,7 @@ extracted_data/
 *.jpg
 *.jpeg
 *.txt
+!auto_capture_outputs/*.txt
 
 # OS
 .DS_Store

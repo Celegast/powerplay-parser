@@ -1,0 +1,5 @@
+2026-07-02 08:25 UTC
+System Name	Power	State		Undermining	Reinforcement	Initial CP
+50 Cassiopeiae	Pranav Antal	FORTIFIED		54581	0	807000
+HIP 17272	Pranav Antal	FORTIFIED		0	0	370000
+Col 359 Sector TD-Q c6-4	Pranav Antal	FORTIFIED		0	0	468000

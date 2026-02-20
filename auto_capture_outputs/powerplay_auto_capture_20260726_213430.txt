@@ -1,0 +1,3 @@
+2026-07-26 18:57 UTC
+System Name	Power	State		Undermining	Reinforcement	Initial CP
+Col 285 Sector RO-R d4-65	Pranav Antal	FORTIFIED		30	135209	381000

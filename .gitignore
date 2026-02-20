@@ -40,6 +40,8 @@ extracted_data/
 *.jpg
 *.jpeg
 *.txt
+!auto_capture_outputs/*.txt
+
 credentials.py
 
 # OS

@@ -1,0 +1,27 @@
+2026-06-26 13:18 UTC
+System Name	Power	State		Undermining	Reinforcement	Initial CP
+Hyades Sector GW-W d1-92	Pranav Antal	EXPLOITED		6886	13636	45000
+50 Cassiopeiae	Pranav Antal	FORTIFIED		7441	32801	399000
+Col 359 Sector TD-Q c6-4	Pranav Antal	EXPLOITED		0	134870	0
+HIP 8548	Pranav Antal	FORTIFIED		110	245	366000
+Lyncis Sector HR-W c1-8	Pranav Antal	FORTIFIED		0	53009	402000
+Synuefe AP-L b54-1	Pranav Antal	EXPLOITED		284	179	57000
+Hyades Sector KJ-P b6-4	Pranav Antal	EXPLOITED		0	22367	0
+HIP 21008	Pranav Antal	EXPLOITED		0	10	0
+Alrai Sector HH-V b2-5	Pranav Antal	EXPLOITED		55	10	0
+Col 285 Sector MA-U b17-3	Pranav Antal	EXPLOITED		0	130	8000
+Piscium Sector LX-U b2-4	Pranav Antal	EXPLOITED		0	4325	8000
+Synuefe LQ-K b54-0	Pranav Antal	EXPLOITED		0	1115	0
+Tong	Pranav Antal	EXPLOITED		0	0	26000
+HIP 15266	Pranav Antal	EXPLOITED		61	0	37000
+Col 285 Sector ZN-M b22-7	Pranav Antal	EXPLOITED		0	275	0
+Col 359 Sector NR-T c4-17	Pranav Antal	FORTIFIED		0	0	374000
+Col 359 Sector AJ-N b9-4	Pranav Antal	FORTIFIED		0	0	413000
+Arietis Sector TY-P a6-0	Pranav Antal	EXPLOITED		0	0	26000
+Col 285 Sector JU-C b14-3	Pranav Antal	FORTIFIED		0	31966	421000
+Pegasi Sector JM-V b2-5	Pranav Antal	FORTIFIED		0	33813	366000
+Col 359 Sector OC-G B13-2	Pranav Antal	EXPLOITED		0	148591	0
+Col 285 Sector VU-W b15-0	Pranav Antal	EXPLOITED		0	36699	0
+Kokojelatia	Pranav Antal	EXPLOITED		0	34127	0
+Alrai Sector KS-T b3-3	Pranav Antal	EXPLOITED		0	31562	0
+HIP 112334	Pranav Antal	EXPLOITED		0	30208	0

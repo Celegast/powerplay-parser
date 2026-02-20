@@ -1,0 +1,39 @@
+2026-08-22 14:30 UTC
+System Name	Power	State		Undermining	Reinforcement	Initial CP
+Pegasi Sector DB-X c1-2	Pranav Antal				111017	
+Piscium Sector MI-T b3-8	Pranav Antal	Archon Delaine		6684	103408	
+Pegasi Sector QD-S b4-6	Pranav Antal	Archon Delaine		24154	117698	
+HIP 18837	Pranav Antal				24783	
+Pegasi Sector AL-X c1-2	Pranav Antal				588	
+Col 359 Sector PC-G b13-5	Pranav Antal				26629	
+Piscium Sector KN-T b3-3	Pranav Antal	Archon Delaine		351	18542	
+Arietis Sector BR-M b7-4	Pranav Antal	Li Yong-Rui		111	9593	
+NLTT 189	Pranav Antal				63530	
+Wandrama	Pranav Antal				32037	
+Col 285 Sector TL-B b14-3	Pranav Antal				0	
+Ceti Sector DQ-Y c17	Pranav Antal	Denton Patreus		276171	159671	
+LHS 1245	Pranav Antal	Denton Patreus		73877	170704	
+HR 1507	Pranav Antal	Li Yong-Rui		29834	259768	
+90 c1 Tauri	Pranav Antal	Li Yong-Rui		50535	163452	
+Ceti Sector OS-T b3-4	Pranav Antal	Li Yong-Rui		205235	470364	
+Piscium Sector LC-V b2-3	Pranav Antal	Li Yong-Rui		158071	254551	
+Ceti Sector DQ-Y c19	Pranav Antal	Li Yong-Rui		28619	464897	
+Hyades Sector UO-Q b5-5	Pranav Antal	Li Yong-Rui		109	125876	
+Zi Yomi	Pranav Antal	Archon Delaine		7754	141949	
+Col 285 Sector AZ-K b23-2	Pranav Antal				121985	
+HR 6722	Pranav Antal				128714	
+Col 285 Sector RD-T d3-45	Pranav Antal				125055	
+Col 285 Sector WF-N c7-4	Pranav Antal				123879	
+Hyades Sector KI-G a12-2	Pranav Antal				141664	
+Hyades Sector DB-N b7-5	Pranav Antal	Li Yong-Rui		75	122005	
+Col 285 Sector YV-M c7-21	Pranav Antal				123389	
+15 Lacertae	Pranav Antal				1213801	
+Col 285 Sector UU-M b8-4	Pranav Antal				122415	
+Pegasi Sector KD-R b5-1	Pranav Antal				160750	
+Pegasi Sector KY-G a11-0	Pranav Antal	Archon Delaine		41	1386960	
+Col 359 Sector NC-U d3-84	Pranav Antal				128220	
+HIP 1732	Pranav Antal				376805	
+HIP 113959	Pranav Antal				122878	
+Ceti Sector QY-R b4-1	Pranav Antal	Li Yong-Rui		1464	275686	
+Ceti Sector RJ-Q b5-4	Pranav Antal	Archon Delaine		1846	272082	
+Ceti Sector MX-U b2-3	Pranav Antal				132233	

@@ -1,0 +1,73 @@
+2026-08-20 17:03 UTC
+System Name	Power	State		Undermining	Reinforcement	Initial CP
+Tzu Kun	Pranav Antal	EXPLOITED		0	67689	0
+HR 1480	Pranav Antal	EXPLOITED		0	0	0
+Pegasi Sector HX-T B3-0	Pranav Antal	FORTIFIED		4308	0	515000
+Hidar	Pranav Antal	FORTIFIED		0	10658	424000
+Jang O	Pranav Antal	STRONGHOLD		0	12095	1049000
+Col 285 Sector RO-R D4-65	Pranav Antal	STRONGHOLD		0	27948	1010000
+HIP 7245	Pranav Antal	STRONGHOLD		0	0	1071000
+Tsui	Pranav Antal	FORTIFIED		0	11930	363000
+Kuruages	Pranav Antal	FORTIFIED		0	10	395000
+YY Eridani	Pranav Antal	FORTIFIED		0	10	392000
+BD-06 4663	Pranav Antal	FORTIFIED		0	1927	384000
+Synuefe AP-L b54-0	Pranav Antal	FORTIFIED		0	30448	359000
+Cherets	Pranav Antal	FORTIFIED		0	0	359000
+Hyades Sector CR-V c2-16	Pranav Antal	FORTIFIED		0	0	366000
+HIP 21008	Pranav Antal	EXPLOITED		2058	0	113000
+Col 285 Sector XS-M b22-5	Pranav Antal	STRONGHOLD		0	10	1032000
+Hyades Sector AG-N b7-2	Pranav Antal	FORTIFIED		0	5	421000
+Bama	Pranav Antal	EXPLOITED		0	21405	0
+Bhumliaurt	Pranav Antal	EXPLOITED		0	32024	0
+Bugaga	Pranav Antal	EXPLOITED		0	21479	0
+Ceti Sector AF-A d101	Pranav Antal	EXPLOITED		0	0	0
+Ceti Sector HR-V b2-4	Pranav Antal	EXPLOITED		0	11033	0
+Ceti Sector JX-T b3-2	Pranav Antal	EXPLOITED		0	3925	0
+Ceti Sector MX-T b3-2	Pranav Antal	EXPLOITED		0	5746	0
+Ceti Sector RJ-Q b5-2	Pranav Antal	EXPLOITED		0	3917	0
+Chick Ba	Pranav Antal	EXPLOITED		0	0	0
+Col 285 Sector KN-T D3-46	Pranav Antal	EXPLOITED		0	5	0
+Col 285 Sector KN-T D3-68	Pranav Antal	EXPLOITED		0	5	0
+Col 285 Sector LN-T D3-93	Pranav Antal	EXPLOITED		0	35077	0
+Col 285 Sector OT-R D4-55	Pranav Antal	EXPLOITED		0	5	0
+Col 285 Sector PT-R d4-24	Pranav Antal	EXPLOITED		0	0	0
+Col 285 Sector TJ-Y b14-3	Pranav Antal	EXPLOITED		0	29699	0
+Col 285 Sector TP-O C6-3	Pranav Antal	EXPLOITED		0	20	0
+Col 285 Sector YV-M c7-19	Pranav Antal	EXPLOITED		0	0	0
+Col 285 Sector YV-M c7-8	Pranav Antal	EXPLOITED		0	25	0
+Col 285 Sector KY-H c10-7	Pranav Antal	EXPLOITED		0	0	0
+HIP 106168	Pranav Antal	EXPLOITED		0	10	0
+HIP 108812	Pranav Antal	EXPLOITED		0	20	0
+HIP 110583	Pranav Antal	EXPLOITED		0	15	0
+HIP 110788	Pranav Antal	EXPLOITED		0	10	0
+HIP 115489	Pranav Antal	EXPLOITED		0	10	0
+HIP 117029	Pranav Antal	EXPLOITED		0	0	0
+HIP 19809	Pranav Antal	EXPLOITED		0	19965	0
+HIP 22296	Pranav Antal	EXPLOITED		0	8530	0
+HIP 87976	Pranav Antal	EXPLOITED		0	4270	0
+HIP 88241	Pranav Antal	EXPLOITED		0	20	0
+HR 858	Pranav Antal	EXPLOITED		0	0	0
+Hyades Sector DL-O b6-4	Pranav Antal	EXPLOITED		0	15	0
+Hyades Sector UA-B a15-1	Pranav Antal	EXPLOITED		0	0	0
+ICZ DW-V b2-3	Pranav Antal	EXPLOITED		0	36571	0
+ICZ FR-V b2-1	Pranav Antal	EXPLOITED		0	38502	0
+ICZ YE-Z b5	Pranav Antal	EXPLOITED		0	27070	0
+LHS 3948	Pranav Antal	EXPLOITED		0	0	0
+LHS 448	Pranav Antal	EXPLOITED		0	0	0
+Lyncis Sector OS-U b2-5	Pranav Antal	EXPLOITED		0	5	0
+Lyncis Sector QT-R b4-4	Pranav Antal	EXPLOITED		0	4860	0
+Nyora	Pranav Antal	EXPLOITED		0	16606	0
+Pegasi Sector DR-V B2-6	Pranav Antal	EXPLOITED		0	0	0
+Pegasi Sector FW-W d1-99	Pranav Antal	EXPLOITED		0	10063	0
+Pegasi Sector JC-V c2-16	Pranav Antal	EXPLOITED		0	7929	0
+Pegasi Sector LH-V b2-5	Pranav Antal	EXPLOITED		0	16439	0
+Pegasi Sector PS-T b3-2	Pranav Antal	EXPLOITED		0	0	0
+Pegasi Sector PT-Q b5-0	Pranav Antal	EXPLOITED		0	6093	0
+Pegasi Sector WB-I a11-3	Pranav Antal	EXPLOITED		0	0	0
+Piscium Sector IC-V b2-5	Pranav Antal	EXPLOITED		0	35790	0
+Piscium Sector JN-S a4-2	Pranav Antal	EXPLOITED		0	12765	0
+Piscium Sector PE-P a6-2	Pranav Antal	EXPLOITED		0	9627	0
+Samon	Pranav Antal	EXPLOITED		0	57249	0
+Synuefe KV-K b54-0	Pranav Antal	EXPLOITED		0	94039	0
+Synuefe RK-F c27-2	Pranav Antal	EXPLOITED		0	18823	0
+Tyrfing	Pranav Antal	EXPLOITED		0	25014	0

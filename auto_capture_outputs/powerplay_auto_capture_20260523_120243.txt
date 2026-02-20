@@ -1,0 +1,4 @@
+2026-05-23 08:56 UTC
+System Name	Power	State		Undermining	Reinforcement	Initial CP
+Col 285 Sector NN-K c8-14	Pranav Antal	EXPLOITED		0	87681	0
+HIP 22203	Pranav Antal	EXPLOITED		2175	17883	113000

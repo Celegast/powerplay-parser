@@ -1,0 +1,24 @@
+2026-08-20 18:00 UTC
+System Name	Power	State		Undermining	Reinforcement	Initial CP
+HIP 113959	Pranav Antal				45276	
+Pegasi Sector DB-X c1-2	Pranav Antal				354	
+Col 285 Sector UU-M b8-4	Pranav Antal				0	
+Col 285 Sector RD-T d3-45	Pranav Antal				72803	
+Col 285 Sector WF-N c7-4	Pranav Antal				43424	
+Col 359 Sector PC-G b13-5	Pranav Antal				26629	
+Piscium Sector KN-T b3-3	Pranav Antal	Archon Delaine		351	9594	
+Arietis Sector BR-M b7-4	Pranav Antal	Li Yong-Rui		111	9593	
+Piscium Sector MI-T b3-8	Pranav Antal	Archon Delaine		6684	20941	
+Pegasi Sector QD-S b4-6	Archon Delaine	Pranav Antal		6925	24154	
+NLTT 189	Pranav Antal				48618	
+Wandrama	Pranav Antal				10563	
+HR 1507	Pranav Antal				0	
+HIP 18837	Pranav Antal				24783	
+Pegasi Sector AL-X c1-2	Pranav Antal				0	
+Col 285 Sector TL-B b14-3	Pranav Antal				0	
+90 c1 Tauri	Li Yong-Rui	Pranav Antal		9585	37158	
+HR 6722	Pranav Antal				0	
+Col 285 Sector YV-M c7-21	Pranav Antal				39370	
+Col 285 Sector AZ-K b23-2	Pranav Antal				0	
+Hyades Sector KI-G a12-2	Pranav Antal				0	
+Col 359 Sector NC-U d3-84	Pranav Antal				128220	

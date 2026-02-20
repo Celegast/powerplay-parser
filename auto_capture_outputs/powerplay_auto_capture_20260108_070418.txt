@@ -1,0 +1,11 @@
+System Name	Power	State		Undermining	Reinforcement	Initial CP
+Col 359 Sector EK-L b10-4	Pranav Antal	STRONGHOLD		26399	39718	1366000
+Col 359 Sector RX-R c5-3	Pranav Antal	FORTIFIED		171928	926310	413000
+Col 359 Sector QX-R c5-11	Pranav Antal	FORTIFIED		1946	3040	525000
+Col 359 Sector QX-R c5-12	Pranav Antal	FORTIFIED		456017	461743	496000
+Col 359 Sector RX-R c5-17	Pranav Antal	FORTIFIED		4217	10018	417000
+Col 359 Sector QX-R c5-7	Pranav Antal	EXPLOITED		37219	45688	94000
+Col 359 Sector QX-R c5-8	Pranav Antal	EXPLOITED		507847	598908	244000
+Col 359 Sector QX-R c5-10	Pranav Antal	EXPLOITED		29562	61537	0
+Col 359 Sector QX-R c5-13	Pranav Antal	Yuri Grom		21269	122360	
+Col 359 Sector RX-R c5-1	Denton Patreus	FORTIFIED		273399	795066	684000

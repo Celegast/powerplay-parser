@@ -1,0 +1,11 @@
+2026-05-15 15:58 UTC
+System Name	Power	State		Undermining	Reinforcement	Initial CP
+Col 285 Sector VZ-W b15-0	Pranav Antal	EXPLOITED		0	177639	395000
+Col 285 Sector XH-O b21-1	Pranav Antal	FORTIFIED		0	6072	428000
+Col 285 Sector RL-B B14-6	Pranav Antal	FORTIFIED		0	0	1093000
+Wu Kong	Pranav Antal	EXPLOITED		729	24207	355000
+Col 359 Sector ZI-N b9-1	Pranav Antal	STRONGHOLD		0	14506	1049000
+Kerb	Pranav Antal	EXPLOITED		5930	6915	69000
+Pegasi Sector VE-Q b5-3	Pranav Antal	EXPLOITED		0	20	12000
+Col 285 Sector EY-W b16-3	Pranav Antal	EXPLOITED		0	238	6000
+Col 285 Sector QT-Y b14-4	Pranav Antal	EXPLOITED		0	7242	14000

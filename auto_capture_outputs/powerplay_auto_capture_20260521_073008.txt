@@ -1,0 +1,26 @@
+2026-05-21 04:59 UTC
+System Name	Power	State		Undermining	Reinforcement	Initial CP
+Aurus	Pranav Antal	EXPLOITED		11473	8651	74000
+MCC 460	Pranav Antal	EXPLOITED		53837	3755	143000
+Col 359 Sector ZI-N b9-1	Pranav Antal	STRONGHOLD		0	29388	1049000
+Col 285 Sector RL-B B14-6	Pranav Antal	STRONGHOLD		0	27888	1093000
+Col 285 Sector XH-O b21-1	Pranav Antal	FORTIFIED		9	135501	428000
+Alrai Sector LS-T b3-6	Pranav Antal	EXPLOITED		0	10705	0
+Hyades Sector OJ-E a13-0	Pranav Antal	EXPLOITED		0	10575	0
+Piscium Sector OI-T b3-4	Pranav Antal	EXPLOITED		0	10392	0
+Piscium Sector GR-W c1-21	Pranav Antal	EXPLOITED		0	6567	0
+Tsongoris	Pranav Antal	FORTIFIED		56408	41372	540000
+Pegasi Sector VE-Q b5-3	Pranav Antal	EXPLOITED		0	13237	12000
+Col 285 Sector EY-W b16-3	Pranav Antal	EXPLOITED		0	11151	6000
+Col 285 Sector QT-Y b14-4	Pranav Antal	EXPLOITED		0	16637	14000
+Lyncis Sector QD-T b3-0	Pranav Antal	EXPLOITED		34	13974	0
+Kerb	Pranav Antal	EXPLOITED		6241	7247	69000
+HIP 116277	Pranav Antal	EXPLOITED		24065	35205	63000
+Pegasi Sector DB-X C1-6	Pranav Antal	EXPLOITED		0	53450	0
+Warnones	Pranav Antal	EXPLOITED		8580	54713	0
+Col 359 Sector NC-U d3-40	Pranav Antal	EXPLOITED		404	45206	0
+Equagei	Pranav Antal	EXPLOITED		103	22539	0
+Lyncis Sector HR-W c1-16	Pranav Antal	STRONGHOLD		12045	20890	1110000
+Col 285 Sector VZ-W b15-0	Pranav Antal	FORTIFIED		0	706921	395000
+HIP 88617	Pranav Antal	EXPLOITED		0	376616	14000
+Wu Kong	Pranav Antal	FORTIFIED		747	60417	355000

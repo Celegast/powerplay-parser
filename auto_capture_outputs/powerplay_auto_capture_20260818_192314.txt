@@ -1,0 +1,50 @@
+2026-08-18 17:02 UTC
+System Name	Power	State		Undermining	Reinforcement	Initial CP
+Col 285 Sector OT-R D4-55	Pranav Antal				49110	
+Col 285 Sector TJ-Y b14-3	Pranav Antal				108425	
+Synuefe RK-F c27-2	Pranav Antal				7159	
+Synuefe KV-K b54-0	Pranav Antal				7054	
+HIP 110788	Pranav Antal				7054	
+HR 484	Pranav Antal				20043	
+Nyora	Archon Delaine	Pranav Antal		4302	18601	
+Col 285 Sector KN-T D3-46	Pranav Antal				55743	
+Col 359 Sector NC-U d3-31	Pranav Antal				7956	
+Lyncis Sector OS-U b2-5	Pranav Antal				6141	
+HIP 88241	Pranav Antal				2030	
+HIP 87976	Pranav Antal				48	
+HIP 110583	Pranav Antal				0	
+Col 285 Sector RD-T d3-45	Pranav Antal				69401	
+Pegasi Sector PS-T b3-2	Pranav Antal				20646	
+Pegasi Sector PT-Q b5-0	Pranav Antal	Li Yong-Rui		2741	74037	
+Pegasi Sector KD-R b5-1	Pranav Antal				34362	
+Col 285 Sector YV-M c7-8	Pranav Antal				102689	
+Col 285 Sector WF-N c7-4	Pranav Antal				0	
+HIP 108812	Pranav Antal				16981	
+Col 285 Sector PT-R d4-24	Pranav Antal				4005	
+Pegasi Sector WB-I a11-3	Pranav Antal				116270	
+Col 359 Sector PC-G b13-5	Pranav Antal				26629	
+Col 359 Sector NC-U d3-84	Pranav Antal				30677	
+Piscium Sector IC-V b2-5	Pranav Antal	Li Yong-Rui		2971	38435	
+Piscium Sector KN-T b3-3	Pranav Antal	Archon Delaine		351	2824	
+Arietis Sector BR-M b7-4	Pranav Antal	Li Yong-Rui		111	645	
+Piscium Sector MI-T b3-8	Pranav Antal	Archon Delaine		6684	14096	
+Pegasi Sector QD-S b4-6	Archon Delaine	Pranav Antal		80	24154	
+Cephei Sector KM-W b1-7	Pranav Antal				41812	
+HR 1480	Pranav Antal	Li Yong-Rui		248	3331	
+Tzu Kun	Li Yong-Rui	Pranav Antal		3071	56286	
+90 c1 Tauri	Li Yong-Rui	Pranav Antal		9585	37158	
+Piscium Sector JN-S a4-2	Pranav Antal	Jerome Archer		7680	55019	
+Chick Ba	Pranav Antal				5204	
+Bugaga	Yuri Grom	Pranav Antal		3578	14662	
+NLTT 189	Pranav Antal				18615	
+Hyades Sector DL-O b6-4	Arissa Lavigny-Duval	Pranav Antal		0	3845	
+HIP 18837	Pranav Antal				6621	
+Pegasi Sector AL-X c1-2	Pranav Antal				0	
+Pegasi Sector LH-V b2-5	Pranav Antal				59022	
+Hyades Sector KI-G a12-2	Pranav Antal				0	
+HIP 22296	Pranav Antal	Li Yong-Rui		24	186405	
+HIP 106168	Pranav Antal				154668	
+Hyades Sector UA-B a15-1	Pranav Antal	Li Yong-Rui		1940	120254	
+Bhumliaurt	Pranav Antal				144566	
+HIP 117029	Pranav Antal	Jerome Archer		1980	151685	
+Lyncis Sector QT-R b4-4	Pranav Antal	Edmund Mahon		13746	120577	

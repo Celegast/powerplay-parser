@@ -1,0 +1,14 @@
+2026-05-14 06:00 UTC
+System Name	Power	State		Undermining	Reinforcement	Initial CP
+HIP 116277	Pranav Antal	EXPLOITED		6179	10273	61000
+Arietis Sector KD-H a11-0	Pranav Antal	EXPLOITED		3423	4694	20000
+HR 1480	Pranav Antal	EXPLOITED		3046	4365	41000
+Tzu Kun	Pranav Antal	EXPLOITED		4557	8292	24000
+Draupnir	Pranav Antal	EXPLOITED		0	10509	4000
+LTT 7218	Pranav Antal	EXPLOITED		0	4840	0
+Pegasi Sector VE-Q b5-3	Pranav Antal	EXPLOITED		0	11577	0
+Col 285 Sector EY-W b16-3	Pranav Antal	EXPLOITED		0	5670	0
+Col 285 Sector QT-Y b14-4	Pranav Antal	EXPLOITED		0	10900	0
+Pegasi Sector EL-Y d96	Pranav Antal	EXPLOITED		0	0	20000
+Austri	Pranav Antal	FORTIFIED		0	961	395000
+Col 359 Sector ZI-N b9-1	Pranav Antal	STRONGHOLD		0	1459	1049000

@@ -1,0 +1,40 @@
+2026-09-03 04:57 UTC
+System Name	Power	State		Undermining	Reinforcement	Initial CP
+Arietis Sector BR-M b7-4	Pranav Antal	Li Yong-Rui		111	22790	
+Col 285 Sector PT-R d4-102	Pranav Antal				0	
+Pegasi Sector EL-Y d87	Pranav Antal	Archon Delaine		6522	36376	
+Piscium Sector GR-W c1-17	Pranav Antal	Archon Delaine		704	46290	
+Comane	Pranav Antal	Li Yong-Rui		47408	124365	
+NLTT 189	Pranav Antal				93939	
+Unkulcay	Pranav Antal	Li Yong-Rui		8192	1383689	
+Pegasi Sector DB-X c1-10	Pranav Antal				865	
+Hyades Sector SP-C a14-3	Pranav Antal	Li Yong-Rui		6437	129031	
+HIP 14796	Pranav Antal				0	
+Hyades Sector CC-T b4-0	Pranav Antal				0	
+Cephei Sector IW-W b1-2	Jerome Archer	Jerome Archer		24		
+Muchihiks	Pranav Antal	Edmund Mahon		90612	17246	
+Hyades Sector RI-T c3-20	Pranav Antal				21331	
+Hyades Sector DA-Q b5-2	Pranav Antal				0	
+Synuefe PP-F c27-7	Pranav Antal				0	
+Col 285 Sector BD-X b16-6	Pranav Antal	Archon Delaine		21	1093	
+Col 359 Sector PC-G b13-5	Pranav Antal				27169	
+Wandrama	Pranav Antal				37547	
+Arietis Sector LX-R a5-3	Pranav Antal				66151	
+Col 285 Sector KY-H c10-14	Pranav Antal	Archon Delaine		80	1530	
+HIP 17747	Pranav Antal				567	
+Pegasi Sector AL-X c1-2	Pranav Antal				813	
+HIP 18837	Pranav Antal				24783	
+Col 285 Sector TL-B b14-3	Pranav Antal				0	
+ICZ YE-Z b1	Pranav Antal				181807	
+Hachan Ku	Pranav Antal				124291	
+Piscium Sector KN-T b3-3	Pranav Antal	Archon Delaine		351	129606	
+Synuefe FF-L b54-1	Pranav Antal				1193	
+Torno	Pranav Antal				142788	
+Tsohodiae	Pranav Antal	Edmund Mahon		11942	120347	
+Lalande 11206	Pranav Antal	Jerome Archer		6643	250815	
+Piscium Sector MI-T b3-8	Pranav Antal	Archon Delaine		6684	124201	
+Khertamoana	Pranav Antal	Li Yong-Rui		42108	122446	
+HIP 6675	Pranav Antal				126108	
+Alrai Sector HR-V b2-1	Pranav Antal	Edmund Mahon		410	124917	
+Ross 239	Pranav Antal	Archon Delaine		355	123923	
+Hyades Sector FL-O B6-1	Pranav Antal				1381503	

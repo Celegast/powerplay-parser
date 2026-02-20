@@ -1,0 +1,3 @@
+2026-05-24 10:56 UTC
+System Name	Power	State		Undermining	Reinforcement	Initial CP
+Hyades Sector KJ-P b6-7	Pranav Antal	EXPLOITED		0	200000	80000

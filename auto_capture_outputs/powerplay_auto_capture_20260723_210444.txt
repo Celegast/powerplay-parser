@@ -1,0 +1,11 @@
+2026-07-23 17:59 UTC
+System Name	Power	State		Undermining	Reinforcement	Initial CP
+HIP 22296	Pranav Antal	Li Yong-Rui		24	16441	
+Lyncis Sector OS-U b2-5	Pranav Antal				6141	
+Hyades Sector AG-N b7-2	Pranav Antal				46021	
+Cephei Sector KM-W b1-7	Pranav Antal				27500	
+Col 359 Sector NC-U d3-31	Pranav Antal				7956	
+Synuefe RK-F c27-2	Pranav Antal				105	
+Pegasi Sector PS-T b3-2	Pranav Antal				20646	
+Piscium Sector JN-S a4-2	Pranav Antal	Jerome Archer		7680	34487	
+Chick Ba	Pranav Antal				5204	

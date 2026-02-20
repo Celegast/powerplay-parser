@@ -1,0 +1,21 @@
+2026-05-23 05:21 UTC
+System Name	Power	State		Undermining	Reinforcement	Initial CP
+Col 285 Sector NN-K c8-14	Pranav Antal	EXPLOITED		0	77091	0
+HIP 88617	Pranav Antal	FORTIFIED		0	23169	392000
+Col 359 Sector ZI-N b9-1	Pranav Antal	STRONGHOLD		2224	1365	1082000
+Col 285 Sector RL-B B14-6	Pranav Antal	STRONGHOLD		0	217	1121000
+Sanoar	Pranav Antal	EXPLOITED		17	16174	0
+Audhumis	Pranav Antal	EXPLOITED		303	6697	0
+62 Gamma Ophiuchi	Pranav Antal	EXPLOITED		0	782	0
+Agrippa	Pranav Antal	EXPLOITED		0	65	0
+Col 285 Sector JE-E b13-2	Pranav Antal	EXPLOITED		0	24764	0
+HIP 21165	Pranav Antal	EXPLOITED		1299	4461	0
+Alrai Sector LS-T b3-6	Pranav Antal	EXPLOITED		0	858	12000
+Hyades Sector OJ-E a13-0	Pranav Antal	EXPLOITED		0	143	12000
+Piscium Sector OI-T b3-4	Pranav Antal	EXPLOITED		0	0	12000
+Piscium Sector GR-W c1-21	Pranav Antal	EXPLOITED		0	429	8000
+Col 285 Sector GD-G b12-0	Pranav Antal	EXPLOITED		7008	4468	0
+HIP 108552	Pranav Antal	EXPLOITED		0	55984	0
+Col 285 Sector VW-Z b14-1	Pranav Antal	FORTIFIED		0	48302	363000
+Col 285 Sector VZ-W b15-0	Pranav Antal	STRONGHOLD		0	208530	1104000
+Col 285 Sector XH-O b21-1	Pranav Antal	FORTIFIED		8319	5402	565000

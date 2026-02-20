@@ -1,0 +1,27 @@
+2026-06-10 03:20 UTC
+System Name	Power	State		Undermining	Reinforcement	Initial CP
+ICZ BL-X b1-4	Pranav Antal	EXPLOITED		178542	285564	90000
+Arietis Sector MJ-O a7-1	Pranav Antal	EXPLOITED		6185	50924	32000
+HIP 22203	Pranav Antal	STRONGHOLD		479	23609	1121000
+Col 285 Sector RQ-B B14-2	Pranav Antal	EXPLOITED		0	5864	0
+Col 285 Sector KS-T d3-120	Pranav Antal	EXPLOITED		46	2587	0
+Ceti Sector BG-X b1-3	Pranav Antal	EXPLOITED		0	5705	0
+Upaniklis	Pranav Antal	EXPLOITED		0	13322	0
+Gliese 870	Pranav Antal	EXPLOITED		0	16231	0
+Synuefe HD-J c25-5	Pranav Antal	EXPLOITED		0	22378	0
+Ngulungbara	Pranav Antal	FORTIFIED		0	51810	363000
+Pegasi Sector GR-V c2-10	Pranav Antal	FORTIFIED		3551	0	439000
+Andlit	Pranav Antal	EXPLOITED		0	0	73000
+Sanoar	Pranav Antal	EXPLOITED		70	1243	20000
+Col 359 Sector AJ-N b9-4	Pranav Antal	FORTIFIED		6	52644	363000
+HIP 112722	Pranav Antal	EXPLOITED		12741	123989	242000
+HIP 116277	Pranav Antal	EXPLOITED		164	5161	65000
+Lyncis Sector HR-W c1-9	Pranav Antal	EXPLOITED		0	18636	0
+Piscium Sector JS-S a4-2	Pranav Antal	EXPLOITED		0	42303	0
+Col 285 Sector HM-M c7-6	Pranav Antal	EXPLOITED		0	45245	0
+Col 285 Sector BO-M b22-4	Pranav Antal	FORTIFIED		7155	137022	384000
+Col 359 Sector MW-H b12-3	Pranav Antal	EXPLOITED		7696	215129	154000
+Col 359 Sector NR-T c4-17	Pranav Antal	EXPLOITED		0	353432	0
+Col 285 Sector NN-K c8-14	Pranav Antal	STRONGHOLD		45886	223700	1015000
+CD-33 16806	Pranav Antal	STRONGHOLD		96339	211619	1204000
+Col 359 Sector NC-U d3-40	Pranav Antal	FORTIFIED		4	756969	446000

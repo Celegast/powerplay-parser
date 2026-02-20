@@ -11,6 +11,9 @@ A powerful Python tool for extracting powerplay system information from Elite Da
 - **Intelligent Dropdown Navigation**: OCR-based system search and selection
 - **Competitive State Support**: Handles both standard and competitive powerplay states
 - **Excel-Ready Output**: Tab-separated format for direct paste into Excel
+- **Multi-Resolution Support**: Automatic coordinate scaling for any aspect ratio (16:9, 21:9, 32:9, etc.)
+- **Cycle Plotting**: Per-cycle RF/UM time-series graphs (`plot_cycle.py`)
+- **Historical Plotting**: RF/UM trends across all stored cycles (`plot_overall.py`)
 - **Debug Logging**: Comprehensive debug output for troubleshooting
 
 ## Prerequisites
@@ -78,7 +81,7 @@ For processing multiple systems automatically:
    - Extract initial control points from the status bar
    - Save results to `powerplay_auto_capture.txt`
 
-**Important**: Position your game window so the powerplay panel is visible. The script uses screen coordinates that may need adjustment for different resolutions.
+**Important**: Position your game window so the powerplay panel is visible. Screen coordinates scale automatically for any resolution and aspect ratio.
 
 ### Manual Capture
 
@@ -97,6 +100,40 @@ For capturing individual systems interactively:
 
 5. Results saved to `powerplay_data.txt`
 
+### Plotting
+
+Two scripts generate graphs from captured data stored in `auto_capture_outputs/`.
+
+#### `plot_cycle.py` — Current cycle
+
+```bash
+# Default: both RF and UM in a single two-panel image
+python plot_cycle.py
+
+# Single metric
+python plot_cycle.py -m reinforcement
+python plot_cycle.py -m undermining
+python plot_cycle.py -m decay
+
+# Save to file instead of displaying
+python plot_cycle.py -o cycle_69.png
+python plot_cycle.py -m undermining -o cycle_69_um.png
+```
+
+The default (no `-m`) produces a **two-panel image** with Reinforcement on top and Undermining on the bottom, sharing the same time axis. Passing `-m` produces a single-panel plot for that metric.
+
+#### `plot_overall.py` — All cycles
+
+```bash
+# Display interactively
+python plot_overall.py
+
+# Save to file
+python plot_overall.py -o overall.png
+```
+
+Shows RF and UM across **all stored cycles** in two stacked panels. Vertical dotted lines mark each Thursday tick with cycle numbers (C62, C63, …) labelled at the top. The sawtooth pattern within each cycle (values rise during the week and reset at the tick) is clearly visible.
+
 ## How It Works
 
 ### OCR Pipeline
@@ -105,7 +142,7 @@ The parser uses a sophisticated multi-stage OCR approach:
 
 1. **Screenshot Capture**
    - Full screen or region-specific capture
-   - Automatic panel cropping (740x646 px from 5120x1440 resolution)
+   - Automatic panel cropping with resolution-aware scaling (see Configuration)
 
 2. **Subsection Extraction**
    - System Name: (14, 56) - (552, 96)
@@ -238,25 +275,30 @@ All current powerplay leaders are supported:
 PowerplayParser/
 ├── auto_capture.py          # Automated batch processing
 ├── manual_capture.py        # Manual hotkey capture
-├── powerplay_ocr.py        # Core OCR library
-├── config.py               # Configuration
-├── input.txt               # System list for auto-capture
-├── pyproject.toml          # Project metadata and dependencies (recommended)
-├── requirements.txt        # Python dependencies (legacy)
-├── README.md               # This file
-├── tests/                  # Test and debug scripts
-│   ├── test_*.py          # Various test scripts
-│   └── debug_*.py         # Debug utilities
-└── auto_capture_debug/     # Debug output (auto-created)
-    ├── cropped/           # Cropped panel images
-    ├── dropdown/          # Dropdown screenshots
-    └── text/              # OCR debug text
+├── powerplay_ocr.py         # Core OCR library
+├── summarize_powers.py      # Per-power aggregation and decay calculation
+├── plot_cycle.py            # RF/UM graph for the current cycle
+├── plot_overall.py          # RF/UM graphs across all stored cycles
+├── config.py                # Configuration and screen coordinates
+├── input.txt                # System list for auto-capture
+├── pyproject.toml           # Project metadata and dependencies (recommended)
+├── requirements.txt         # Python dependencies (legacy)
+├── README.md                # This file
+├── auto_capture_outputs/    # Timestamped capture results
+├── tests/                   # Test and debug scripts
+│   ├── test_*.py           # Various test scripts
+│   └── debug_*.py          # Debug utilities
+└── auto_capture_debug/      # Debug output (auto-created)
+    ├── cropped/            # Cropped panel images
+    ├── dropdown/           # Dropdown screenshots
+    └── text/               # OCR debug text
 ```
 
 ## Tips for Best Results
 
 ### Resolution & Display
-- Best results at 5120x1440 resolution
+- Supported resolutions: any aspect ratio (16:9, 21:9, 32:9, etc.)
+- Coordinates in `config.py` are stored in the 16:9-zone-relative space at 1440 height and scaled automatically at runtime
 - Standard in-game UI scaling
 - Ensure powerplay panel is fully visible
 - Good contrast with clear text
@@ -296,7 +338,7 @@ Both modes create extensive debug files:
 
 ### Auto-Capture Not Clicking
 - Check debug dropdown images - are system names visible?
-- Adjust search field coordinates for your resolution
+- Search field and dropdown coordinates scale automatically; verify `SEARCH_FIELD_X/Y` in `config.py` match your screen layout if issues persist
 - Ensure dropdown has time to appear (timing in code)
 
 ### Initial CP Not Detected
@@ -327,14 +369,12 @@ python test_initial_cp.py
 ## Known Limitations
 
 - Requires consistent window positioning for auto-capture
-- Currently only optimized for 5120x1440 resolution
 - OCR can misread similar characters (e.g., "0" vs "O")
-- Dropdown detection limited to ~600px height
+- Dropdown detection limited to ~600px height at reference resolution (scales automatically)
 - Initial CP rounded to nearest 1,000 (sufficient precision)
 
 ## Future Enhancements
 
-- [ ] Multi-resolution support with auto-scaling
 - [ ] GUI for configuration and monitoring
 - [ ] CSV/JSON export formats
 - [ ] Integration with the Powerplay Tracker

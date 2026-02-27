@@ -96,12 +96,30 @@ def load_all_data(output_dir='auto_capture_outputs'):
     return power_data, ticks
 
 
-def plot_overall(output_file=None):
+def plot_overall(output_file=None, powers=None):
+    """
+    Args:
+        output_file: Path to save the figure; if None the plot is displayed.
+        powers: Optional list of power name substrings (case-insensitive) to include.
+                If None or empty, all powers are shown.
+    """
     power_data, ticks = load_all_data()
 
     if not power_data:
         print("No data found in auto_capture_outputs/")
         return
+
+    # Filter to requested powers (case-insensitive substring match)
+    if powers:
+        filters = [p.lower() for p in powers]
+        power_data = {
+            name: pts for name, pts in power_data.items()
+            if any(f in name.lower() for f in filters)
+        }
+        if not power_data:
+            print(f"No data found for powers matching: {', '.join(powers)}")
+            print(f"Available powers: {', '.join(sorted(POWER_COLORS))}")
+            return
 
     # Determine time range
     all_times = [pt[0] for pts in power_data.values() for pt in pts]
@@ -127,7 +145,7 @@ def plot_overall(output_file=None):
         for spine in ax.spines.values():
             spine.set_edgecolor('#444444')
 
-    # Plot lines
+    # Plot lines and annotate the last captured point of each cycle
     for power_name in sorted(power_data.keys()):
         pts = power_data[power_name]
         times = [p[0] for p in pts]
@@ -139,6 +157,23 @@ def plot_overall(output_file=None):
                    label=power_name, color=color)
         ax_um.plot(times, um_vals, marker='o', markersize=3, linewidth=1.5,
                    label=power_name, color=color)
+
+        # Annotate the last data point of each cycle (shows end-of-cycle totals)
+        for i, (t, rf, um) in enumerate(zip(times, rf_vals, um_vals)):
+            is_last_in_cycle = (
+                i == len(times) - 1
+                or get_cycle_tick_time(times[i + 1]) != get_cycle_tick_time(t)
+            )
+            if not is_last_in_cycle:
+                continue
+            if rf >= 100:
+                ax_rf.annotate(f'{rf:.0f}k', xy=(t, rf),
+                               xytext=(0, 5), textcoords='offset points',
+                               ha='center', fontsize=6, color=color)
+            if um >= 100:
+                ax_um.annotate(f'{um:.0f}k', xy=(t, um),
+                               xytext=(0, 5), textcoords='offset points',
+                               ha='center', fontsize=6, color=color)
 
     # Cycle tick boundary lines + cycle number labels
     # get_xaxis_transform(): x in data coords, y in axes fraction (0=bottom, 1=top)
@@ -171,15 +206,23 @@ def plot_overall(output_file=None):
     # Title
     first_cycle = get_cycle_number(ticks[0]) if ticks else '?'
     last_cycle  = get_cycle_number(ticks[-1]) if ticks else '?'
+    n = len(power_data)
+    if n == len(POWER_COLORS) or powers is None:
+        power_subtitle = 'All Powers'
+    elif n <= 3:
+        power_subtitle = ' / '.join(sorted(power_data.keys()))
+    else:
+        power_subtitle = f'{n} Powers'
     fig.suptitle(
-        f'Enclave — Cycle {first_cycle}–{last_cycle} — RF & UM over Time',
+        f'Enclave — Cycle {first_cycle}–{last_cycle} — RF & UM — {power_subtitle}',
         fontsize=14, color='#ffffff', y=0.99
     )
 
-    # Shared legend below the figure
+    # Shared legend below the figure (columns scale with number of powers shown)
     handles, labels = ax_rf.get_legend_handles_labels()
+    ncol = min(n, 6)
     fig.legend(handles, labels,
-               loc='lower center', ncol=6,
+               loc='lower center', ncol=ncol,
                fontsize=9, facecolor='#2a2a3e', edgecolor='#444444',
                labelcolor='#cccccc',
                bbox_to_anchor=(0.5, 0.0))
@@ -201,8 +244,18 @@ def main():
         '-o', '--output',
         help='Output file path (e.g., overall.png). If omitted, displays the plot.'
     )
+    parser.add_argument(
+        '-p', '--powers',
+        nargs='+',
+        metavar='POWER',
+        help=(
+            'One or more power name substrings to plot (case-insensitive). '
+            'E.g.: -p "Pranav Antal" Nakato  →  shows Pranav Antal and Nakato Kaine. '
+            'If omitted, all powers are shown.'
+        )
+    )
     args = parser.parse_args()
-    plot_overall(output_file=args.output)
+    plot_overall(output_file=args.output, powers=args.powers)
 
 
 if __name__ == '__main__':

@@ -115,6 +115,16 @@ def parse_powerplay_file(filepath):
                 initial_cp = int(numeric_parts[2].replace(',', ''))
             except ValueError:
                 continue
+        elif len(numeric_parts) == 2:
+            # Contested system: state column holds the contesting power name
+            # and initial CP is absent (system has been depleted to 0).
+            try:
+                undermining = int(numeric_parts[0].replace(',', ''))
+                reinforcement = int(numeric_parts[1].replace(',', ''))
+                initial_cp = 0
+            except ValueError:
+                continue
+            state = 'CONTESTED'
         else:
             continue
 

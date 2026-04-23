@@ -141,7 +141,8 @@ def parse_powerplay_file(filepath):
             'power': power,
             'state': state,
             'reinforcement': reinforcement,
-            'undermining': undermining_adjusted,
+            'undermining': undermining_adjusted,   # net (decay-subtracted), used by summarize tools
+            'undermining_raw': undermining,        # raw value from capture file
             'decay': decay,
             'initial_cp': initial_cp
         })

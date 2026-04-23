@@ -257,7 +257,7 @@ def update_sheet(system_map, data_timestamp, update_images=True, dry_run=False):
         entry = {
             'name':      system_name,
             'timestamp': ts_str,
-            'um':        sys_data['undermining'],
+            'um':        sys_data.get('undermining_raw', sys_data['undermining']),
             'rf':        sys_data['reinforcement'],
         }
 
@@ -276,7 +276,7 @@ def update_sheet(system_map, data_timestamp, update_images=True, dry_run=False):
 
         has_img = 'bar_b64' in entry and entry['bar_b64']
         print(f"  {'[DRY]' if dry_run else '[OK] '} {system_name[:45]:<45} "
-              f"UM={sys_data['undermining']:>8,}  RF={sys_data['reinforcement']:>8,}"
+              f"UM={entry['um']:>8,}  RF={sys_data['reinforcement']:>8,}"
               + ("  [+img]" if has_img else ""))
 
     print()

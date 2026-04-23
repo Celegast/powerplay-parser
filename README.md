@@ -14,6 +14,8 @@ A powerful Python tool for extracting powerplay system information from Elite Da
 - **Multi-Resolution Support**: Automatic coordinate scaling for any aspect ratio (16:9, 21:9, 32:9, etc.)
 - **Cycle Plotting**: Per-cycle RF/UM time-series graphs (`plot_cycle.py`)
 - **Historical Plotting**: RF/UM trends across all stored cycles (`plot_overall.py`)
+- **System History Plotting**: Single-system CP history coloured by owning power (`plot_system.py`)
+- **Overall Summary**: Accumulated RF/UM stats across all stored cycles (`summarize_powers_overall.py`)
 - **Debug Logging**: Comprehensive debug output for troubleshooting
 
 ## Prerequisites
@@ -46,6 +48,7 @@ Required packages:
 - `numpy` - Numerical operations
 - `pyautogui` - Screenshot capture and mouse control
 - `keyboard` - Hotkey detection
+- `matplotlib` - Plotting
 
 ## Installation
 
@@ -133,6 +136,39 @@ python plot_overall.py -o overall.png
 ```
 
 Shows RF and UM across **all stored cycles** in two stacked panels. Vertical dotted lines mark each Thursday tick with cycle numbers (C62, C63, …) labelled at the top. The sawtooth pattern within each cycle (values rise during the week and reset at the tick) is clearly visible.
+
+#### `plot_system.py` — Single-system CP history
+
+```bash
+# Display interactively
+python plot_system.py "Col 359 Sector ZI-N b9-1"
+
+# Save to file (substring match is fine)
+python plot_system.py "ZI-N b9-1" -o zi-n_b9-1.png
+```
+
+Plots net control points (initial CP + RF − UM) over time for one system. Line segments are coloured by the power that owned the system at each data point. Contested periods are shaded in red. Horizontal threshold lines mark the Fortified (350 k) and Stronghold (1 000 k) boundaries. Each cycle is labelled with its number and end-of-cycle state (FF / SH / EX / C!).
+
+### Summarizing data across all cycles
+
+#### `summarize_powers.py` — Single capture file
+
+```bash
+python summarize_powers.py                          # latest capture
+python summarize_powers.py auto_capture_outputs/powerplay_auto_capture_20260420_123456.txt
+python summarize_powers.py -p "Aisling Duval"       # show another power's systems
+```
+
+#### `summarize_powers_overall.py` — All stored cycles
+
+```bash
+python summarize_powers_overall.py                  # full history
+python summarize_powers_overall.py -c 70 78         # cycles 70–78 only
+python summarize_powers_overall.py -p "Yuri Grom"   # another power's system detail
+python summarize_powers_overall.py -v               # include per-cycle breakdown
+```
+
+Accumulates RF, UM, and decay across every stored capture file. Each cycle is represented by the latest reading of each system seen that cycle, so partial captures within a week are handled correctly.
 
 ## How It Works
 
@@ -273,25 +309,28 @@ All current powerplay leaders are supported:
 
 ```
 PowerplayParser/
-├── auto_capture.py          # Automated batch processing
-├── manual_capture.py        # Manual hotkey capture
-├── powerplay_ocr.py         # Core OCR library
-├── summarize_powers.py      # Per-power aggregation and decay calculation
-├── plot_cycle.py            # RF/UM graph for the current cycle
-├── plot_overall.py          # RF/UM graphs across all stored cycles
-├── config.py                # Configuration and screen coordinates
-├── input.txt                # System list for auto-capture
-├── pyproject.toml           # Project metadata and dependencies (recommended)
-├── requirements.txt         # Python dependencies (legacy)
-├── README.md                # This file
-├── auto_capture_outputs/    # Timestamped capture results
-├── tests/                   # Test and debug scripts
-│   ├── test_*.py           # Various test scripts
-│   └── debug_*.py          # Debug utilities
-└── auto_capture_debug/      # Debug output (auto-created)
-    ├── cropped/            # Cropped panel images
-    ├── dropdown/           # Dropdown screenshots
-    └── text/               # OCR debug text
+├── auto_capture.py               # Automated batch processing
+├── manual_capture.py             # Manual hotkey capture
+├── powerplay_ocr.py              # Core OCR library
+├── summarize_powers.py           # Single-file per-power summary and decay calculation
+├── summarize_powers_overall.py   # Accumulated summary across all stored cycles
+├── plot_cycle.py                 # RF/UM graph for the current cycle
+├── plot_overall.py               # RF/UM graphs across all stored cycles
+├── plot_system.py                # CP history graph for a single system
+├── config.py                     # Configuration and screen coordinates
+├── input.txt                     # System list for auto-capture (synced from sheet)
+├── pyproject.toml                # Project metadata and dependencies (recommended)
+├── requirements.txt              # Python dependencies (legacy)
+├── README.md                     # This file
+├── auto_capture_outputs/         # Timestamped capture results
+├── tests/                        # Test and debug scripts
+│   ├── test_*.py                # Various test scripts
+│   └── debug_*.py               # Debug utilities
+└── auto_capture/                 # Debug output (auto-created)
+    ├── screenshots/             # Full screenshots (deleted after successful OCR)
+    ├── debug/cropped/           # Cropped panel images (used for CP bar extraction)
+    ├── debug/dropdown/          # Dropdown screenshots
+    └── debug/ocr_text/          # OCR and parsing details per system
 ```
 
 ## Tips for Best Results
@@ -372,12 +411,6 @@ python test_initial_cp.py
 - OCR can misread similar characters (e.g., "0" vs "O")
 - Dropdown detection limited to ~600px height at reference resolution (scales automatically)
 - Initial CP rounded to nearest 1,000 (sufficient precision)
-
-## Future Enhancements
-
-- [ ] GUI for configuration and monitoring
-- [ ] CSV/JSON export formats
-- [ ] Integration with the Powerplay Tracker
 
 ## License
 

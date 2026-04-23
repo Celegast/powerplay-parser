@@ -60,6 +60,9 @@ BAR_CROP_LEFT_PCT = 0.24
 # Target display width in the sheet (pixels); height is scaled proportionally
 BAR_TARGET_WIDTH = 368
 
+# Number of systems per POST request — keeps each call well under Apps Script's 6-min limit
+POST_BATCH_SIZE = 10
+
 
 # ── Capture data loading ───────────────────────────────────────────────────────
 
@@ -290,18 +293,32 @@ def update_sheet(system_map, data_timestamp, update_images=True, dry_run=False):
         print("Nothing to update.")
         return
 
-    print(f"\nSending updates to Google Sheet …")
-    result = post_updates(payload)
-    if 'error' in result:
-        print(f"ERROR from Apps Script: {result['error']}")
-    else:
-        print(f"Sheet updated: {result.get('updated', '?')} systems")
-        if result.get('notFound'):
-            print(f"Not found in sheet: {result['notFound']}")
-        if result.get('imageErrors'):
-            print(f"Image errors:")
-            for e in result['imageErrors']:
-                print(f"  {e}")
+    batches = [payload[i:i + POST_BATCH_SIZE] for i in range(0, len(payload), POST_BATCH_SIZE)]
+    print(f"\nSending updates to Google Sheet in {len(batches)} batch(es) of ≤{POST_BATCH_SIZE} …")
+
+    total_updated = 0
+    all_not_found = []
+    all_image_errors = []
+
+    for batch_num, batch in enumerate(batches, 1):
+        print(f"  Batch {batch_num}/{len(batches)} ({len(batch)} systems) …", end=' ', flush=True)
+        result = post_updates(batch)
+        if 'error' in result:
+            print(f"ERROR: {result['error']}")
+        else:
+            n = result.get('updated', 0)
+            total_updated += n
+            print(f"ok ({n} updated)")
+            all_not_found.extend(result.get('notFound') or [])
+            all_image_errors.extend(result.get('imageErrors') or [])
+
+    print(f"\nSheet updated: {total_updated} systems total")
+    if all_not_found:
+        print(f"Not found in sheet: {', '.join(all_not_found)}")
+    if all_image_errors:
+        print(f"Image errors:")
+        for e in all_image_errors:
+            print(f"  {e}")
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────

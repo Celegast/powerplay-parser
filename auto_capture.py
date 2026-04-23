@@ -92,17 +92,13 @@ def find_and_click_system_in_dropdown(search_x, search_y, system_name, debug_ind
         dark_ratio_current = dark_pixels_current / len(row_current)
         dark_ratio_prev = dark_pixels_prev / len(row_prev)
 
-        # If both rows are almost entirely dark, this is where content ended
+        # Scanning upward from the game map (bright), the first pair of dark rows marks
+        # the bottom edge of the dropdown. Use that Y as the crop height with a small
+        # margin. Do NOT keep scanning upward — that walks into the dropdown content
+        # (orange text on dark bg, ~92% dark) and shrinks the crop to almost nothing.
         if dark_ratio_current >= dark_pixel_ratio_threshold and dark_ratio_prev >= dark_pixel_ratio_threshold:
-            # Found the end of content - crop here
-            dropdown_height = y
-            # Don't break - keep going up to find the FIRST content (bottom-most)
-        else:
-            # Found content - stop here
-            if dropdown_height < dropdown_max_height:
-                # Add a small margin (10 pixels) to include the last line
-                dropdown_height = min(dropdown_height + 10, dropdown_max_height)
-                break
+            dropdown_height = min(y + 15, dropdown_max_height)
+            break
 
     # Crop to just the dropdown area
     screenshot = screenshot_full.crop((0, 0, dropdown_width, dropdown_height))
@@ -153,11 +149,12 @@ def find_and_click_system_in_dropdown(search_x, search_y, system_name, debug_ind
     # Convert back to PIL for pytesseract
     preprocessed_pil = Image.fromarray(cleaned)
 
-    # OCR the dropdown to find matching system names
-    # Try PSM 11 (sparse text, find as much text as possible)
+    # OCR the dropdown to find matching system names.
+    # PSM 6 (uniform text block) keeps multi-word names like "HIP 1897" on one line,
+    # unlike PSM 11 (sparse text) which splits them into separate tokens.
     text = pytesseract.image_to_string(
         preprocessed_pil,
-        config='--oem 3 --psm 11'
+        config='--oem 3 --psm 6'
     )
 
     # Save OCR text for debugging
@@ -209,15 +206,15 @@ def find_and_click_system_in_dropdown(search_x, search_y, system_name, debug_ind
                 best_ratio = ratio
                 best_index = i
 
-        # Accept if similarity is at least 70%
-        if best_ratio >= 0.7 and best_index >= 0:
+        # Accept if similarity is at least 65%
+        if best_ratio >= 0.65 and best_index >= 0:
             match_index = best_index
             match_method = f"fuzzy match ({best_ratio:.1%})"
 
     # Fallback: if no match found at all, use first valid line (skip very short ones)
     if match_index < 0:
         for i, line in enumerate(lines):
-            if len(line) >= 10:  # Must be at least 10 characters to be a system name
+            if len(line) >= 5:  # Must be at least 5 characters to be a system name
                 match_index = i
                 match_method = "fallback (first valid line)"
                 break

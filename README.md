@@ -16,6 +16,7 @@ A powerful Python tool for extracting powerplay system information from Elite Da
 - **Historical Plotting**: RF/UM trends across all stored cycles (`plot_overall.py`)
 - **System History Plotting**: Single-system CP history coloured by owning power (`plot_system.py`)
 - **Overall Summary**: Accumulated RF/UM stats across all stored cycles (`summarize_powers_overall.py`)
+- **Priority Sheet Integration**: One-command update of the group's Google Sheet with live data and CP bar images (`update_prio_sheet.bat`)
 - **Debug Logging**: Comprehensive debug output for troubleshooting
 
 ## Prerequisites
@@ -49,6 +50,8 @@ Required packages:
 - `pyautogui` - Screenshot capture and mouse control
 - `keyboard` - Hotkey detection
 - `matplotlib` - Plotting
+- `requests` - HTTP calls for the Google Sheet updater
+- `openpyxl` - Excel file reading
 
 ## Installation
 
@@ -169,6 +172,93 @@ python summarize_powers_overall.py -v               # include per-cycle breakdow
 ```
 
 Accumulates RF, UM, and decay across every stored capture file. Each cycle is represented by the latest reading of each system seen that cycle, so partial captures within a week are handled correctly.
+
+---
+
+## Priority Sheet Integration
+
+Keeps the group's Google Sheet (`Antal Priorities`) up to date with one command: current UM/RF numbers and a cropped CP-bar image for every system.
+
+### One-time Google Apps Script setup (~5 minutes, free — no Google Cloud billing required)
+
+1. Open the Google Sheet → **Extensions → Apps Script**
+2. Paste the entire contents of `antal_priorities_updater.gs`, replacing any existing code
+3. Change `SECRET_TOKEN` in the script to any password you choose
+4. Click **Deploy → New deployment → Web app**
+   - *Execute as:* **Me**
+   - *Who has access:* **Anyone**
+5. Copy the deployment URL
+
+### Configure `update_google_sheet.py`
+
+Open `update_google_sheet.py` and set the two constants near the top:
+
+```python
+WEB_APP_URL  = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec'
+SECRET_TOKEN = 'your-chosen-password'   # must match antal_priorities_updater.gs
+```
+
+The sheet tab name (`"This Cycle 78"`, `"This Cycle 79"`, …) is derived automatically from the current cycle number — no changes needed each week.
+
+### Running the updater
+
+**Full workflow in one command (recommended):**
+
+```
+update_prio_sheet.bat
+```
+
+This runs all three steps in sequence:
+
+1. **Fetch system list** — reads col B of the Google Sheet and writes it to `input.txt` (picks up any priority changes the group made since the last run)
+2. **In-game capture** — launches `auto_capture.py`; switch to Elite Dangerous when prompted
+3. **Upload** — pushes UM, RF, timestamp, and CP-bar images to the sheet
+
+**Running steps individually:**
+
+```bash
+# Refresh input.txt from the sheet (no game needed)
+python update_google_sheet.py --sync-input
+
+# Upload from an existing capture file (no game needed)
+python update_google_sheet.py
+
+# Upload from a specific archive file
+python update_google_sheet.py -c auto_capture_outputs/powerplay_auto_capture_20260420_123456.txt
+
+# Data only, skip CP bar images
+python update_google_sheet.py --no-images
+
+# Preview without writing to the sheet
+python update_google_sheet.py --dry-run
+```
+
+### What gets updated in the sheet
+
+| Column | Field | Value |
+|--------|-------|-------|
+| C | Updated (UTC) | Timestamp of the capture file |
+| E | CP bar image | Cropped status bar from the screenshot |
+| H | UM | Net undermining (decay-adjusted) |
+| I | RF | Reinforcement points |
+
+Only rows whose system name (col B) appears in the capture file are touched. Systems below the `---END` marker in the sheet are ignored.
+
+### Adjusting the CP bar image
+
+Two constants in `update_google_sheet.py` control how the bar looks in the sheet:
+
+```python
+BAR_CROP_LEFT_PCT = 0.24   # fraction of the left (grey "unoccupied") section to discard
+BAR_TARGET_WIDTH  = 368    # display width in pixels; height scales proportionally
+```
+
+### Redeploying after script changes
+
+When `antal_priorities_updater.gs` is edited, the live deployment must be updated:
+**Deploy → Manage deployments → edit → select "New version" → Deploy**. The URL stays the same.
+
+---
 
 ## How It Works
 
@@ -317,6 +407,9 @@ PowerplayParser/
 ├── plot_cycle.py                 # RF/UM graph for the current cycle
 ├── plot_overall.py               # RF/UM graphs across all stored cycles
 ├── plot_system.py                # CP history graph for a single system
+├── update_google_sheet.py        # Google Sheet updater (data + CP bar images)
+├── antal_priorities_updater.gs   # Apps Script to paste into the Google Sheet
+├── update_prio_sheet.bat         # One-click: sync → capture → upload
 ├── config.py                     # Configuration and screen coordinates
 ├── input.txt                     # System list for auto-capture (synced from sheet)
 ├── pyproject.toml                # Project metadata and dependencies (recommended)

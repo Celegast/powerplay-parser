@@ -121,21 +121,22 @@ function getSheet(name) {
   return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name) || null;
 }
 
-function insertBarImage(sheet, row, col, base64Data, width, height) {
-  // Remove ALL images in this row (iterate backwards to avoid index shift)
-  var images = sheet.getImages();
-  for (var i = images.length - 1; i >= 0; i--) {
-    if (images[i].getAnchorCell().getRow() === row) {
-      images[i].remove();
-    }
-  }
+// Number of columns the bar image spans (E, F, G = 3)
+var IMAGE_SPAN_COLS = 3;
 
-  // Decode base64, insert, then apply explicit dimensions
-  var bytes = Utilities.base64Decode(base64Data);
-  var blob  = Utilities.newBlob(bytes, 'image/png', 'cpbar.png');
-  var img   = sheet.insertImage(blob, col, row);
-  if (width  > 0) img.setWidth(width);
-  if (height > 0) img.setHeight(height);
+function insertBarImage(sheet, row, col, base64Data, width, height) {
+  // Merge E:G for this row so the cell image spans all three columns,
+  // matching the old floating-image layout. Re-merging an already-merged
+  // range is a no-op, so this is safe to call on every update.
+  var imageRange = sheet.getRange(row, col, 1, IMAGE_SPAN_COLS);
+  imageRange.merge();
+
+  var dataUrl   = 'data:image/png;base64,' + base64Data;
+  var cellImage = SpreadsheetApp.newCellImage()
+      .setSourceUrl(dataUrl)
+      .setAltTextTitle('CP bar')
+      .build();
+  imageRange.setValue(cellImage);
 }
 
 function jsonResponse(obj) {

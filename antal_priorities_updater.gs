@@ -90,9 +90,9 @@ function doPost(e) {
         continue;
       }
 
-      sheet.getRange(rowNum, COL_TIMESTAMP).setValue(new Date(sys.timestamp));
-      sheet.getRange(rowNum, COL_UM).setValue(sys.um);
-      sheet.getRange(rowNum, COL_RF).setValue(sys.rf);
+      if (sys.timestamp !== undefined) sheet.getRange(rowNum, COL_TIMESTAMP).setValue(new Date(sys.timestamp));
+      if (sys.um        !== undefined) sheet.getRange(rowNum, COL_UM).setValue(sys.um);
+      if (sys.rf        !== undefined) sheet.getRange(rowNum, COL_RF).setValue(sys.rf);
 
       if (sys.bar_b64) {
         try {

@@ -22,7 +22,9 @@ Typical workflow:
 Options:
   -c, --capture FILE   Capture file to read (default: powerplay_auto_capture.txt)
   --sync-input         Write the sheet's current system list to input.txt, then exit
+  --images-only        Upload CP bar images only; do not write UM, RF, or timestamp
   --no-images          Skip CP bar image updates (data only)
+  --system SYSTEM      Only update the one system whose name contains SYSTEM (case-insensitive)
   --dry-run            Print what would change without modifying the sheet
 """
 
@@ -226,7 +228,8 @@ def sync_input_txt(input_file='input.txt'):
 
 # ── Main update logic ──────────────────────────────────────────────────────────
 
-def update_sheet(system_map, data_timestamp, update_images=True, dry_run=False):
+def update_sheet(system_map, data_timestamp, update_images=True,
+                 images_only=False, system_filter=None, dry_run=False):
     # Format timestamp as ISO 8601 so Apps Script can parse it as a Date object,
     # which satisfies the date-validation rule on column C.
     if data_timestamp:
@@ -236,12 +239,26 @@ def update_sheet(system_map, data_timestamp, update_images=True, dry_run=False):
         ts_str = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
     # Build capture index map for images
-    capture_index_map = build_capture_index_map() if update_images else {}
+    capture_index_map = build_capture_index_map() if (update_images or images_only) else {}
 
     # Fetch system list from the sheet (sheet is source of truth)
     print("Fetching system list from Google Sheet …")
     sheet_systems = fetch_system_list()
-    print(f"  {len(sheet_systems)} systems in sheet")
+
+    # Filter to a single system if requested
+    if system_filter:
+        needle = system_filter.lower()
+        matches = [s for s in sheet_systems if needle in s.lower()]
+        if not matches:
+            sys.exit(f"ERROR: no system in the sheet matches '{system_filter}'")
+        if len(matches) > 1:
+            print(f"Ambiguous filter '{system_filter}' matches {len(matches)} systems:")
+            for m in matches:
+                print(f"  {m}")
+            sys.exit("Use a more specific substring.")
+        sheet_systems = matches
+
+    print(f"  {len(sheet_systems)} system(s) to process")
     print()
 
     # Build the payload
@@ -249,19 +266,18 @@ def update_sheet(system_map, data_timestamp, update_images=True, dry_run=False):
     unmatched = []
 
     for system_name in sheet_systems:
-        sys_data = system_map.get(system_name.lower())
-        if sys_data is None:
-            unmatched.append(system_name)
-            continue
+        entry = {'name': system_name}
 
-        entry = {
-            'name':      system_name,
-            'timestamp': ts_str,
-            'um':        sys_data.get('undermining_raw', sys_data['undermining']),
-            'rf':        sys_data['reinforcement'],
-        }
+        if not images_only:
+            sys_data = system_map.get(system_name.lower())
+            if sys_data is None:
+                unmatched.append(system_name)
+                continue
+            entry['timestamp'] = ts_str
+            entry['um']        = sys_data['undermining']
+            entry['rf']        = sys_data['reinforcement']
 
-        if update_images:
+        if update_images or images_only:
             cap_idx = capture_index_map.get(system_name.lower())
             if cap_idx is not None:
                 cropped_path = f'auto_capture/debug/cropped/capture_{cap_idx:03d}.png'
@@ -274,16 +290,21 @@ def update_sheet(system_map, data_timestamp, update_images=True, dry_run=False):
 
         payload.append(entry)
 
-        has_img = 'bar_b64' in entry and entry['bar_b64']
-        print(f"  {'[DRY]' if dry_run else '[OK] '} {system_name[:45]:<45} "
-              f"UM={entry['um']:>8,}  RF={sys_data['reinforcement']:>8,}"
-              + ("  [+img]" if has_img else ""))
+        has_img = 'bar_b64' in entry
+        tag     = '[DRY]' if dry_run else '[OK] '
+        if images_only:
+            print(f"  {tag} {system_name[:55]:<55}" + ("  [+img]" if has_img else "  (no img)"))
+        else:
+            print(f"  {tag} {system_name[:45]:<45} "
+                  f"UM={entry['um']:>8,}  RF={entry['rf']:>8,}"
+                  + ("  [+img]" if has_img else ""))
 
     print()
-    print(f"Matched: {len(payload)} / {len(sheet_systems)}")
-    if unmatched:
-        print(f"Not in capture ({len(unmatched)}): {', '.join(unmatched[:5])}"
-              + (f' … +{len(unmatched) - 5}' if len(unmatched) > 5 else ''))
+    if not images_only:
+        print(f"Matched: {len(payload)} / {len(sheet_systems)}")
+        if unmatched:
+            print(f"Not in capture ({len(unmatched)}): {', '.join(unmatched[:5])}"
+                  + (f' … +{len(unmatched) - 5}' if len(unmatched) > 5 else ''))
 
     if dry_run:
         print("\n(dry-run — no changes sent to the sheet)")
@@ -338,9 +359,20 @@ def main():
         help='Write the sheet\'s current system list to input.txt, then exit'
     )
     parser.add_argument(
+        '--images-only',
+        action='store_true',
+        help='Upload CP bar images only; do not write UM, RF, or timestamp'
+    )
+    parser.add_argument(
         '--no-images',
         action='store_true',
-        help='Skip CP bar image updates'
+        help='Skip CP bar image updates (data only)'
+    )
+    parser.add_argument(
+        '--system',
+        metavar='SYSTEM',
+        default=None,
+        help='Only update the system whose name contains SYSTEM (case-insensitive substring)'
     )
     parser.add_argument(
         '--dry-run',
@@ -353,19 +385,24 @@ def main():
         sync_input_txt()
         return
 
-    if not os.path.isfile(args.capture):
-        sys.exit(f"ERROR: Capture file not found: {args.capture}")
+    system_map     = {}
+    data_timestamp = None
 
-    print(f"Reading capture data from {args.capture} …")
-    data_timestamp, system_map = load_capture_data(args.capture)
-    print(f"  {len(system_map)} systems loaded"
-          + (f", timestamp: {data_timestamp}" if data_timestamp else ''))
-    print()
+    if not args.images_only:
+        if not os.path.isfile(args.capture):
+            sys.exit(f"ERROR: Capture file not found: {args.capture}")
+        print(f"Reading capture data from {args.capture} …")
+        data_timestamp, system_map = load_capture_data(args.capture)
+        print(f"  {len(system_map)} systems loaded"
+              + (f", timestamp: {data_timestamp}" if data_timestamp else ''))
+        print()
 
     update_sheet(
         system_map,
         data_timestamp,
         update_images=not args.no_images,
+        images_only=args.images_only,
+        system_filter=args.system,
         dry_run=args.dry_run,
     )
 

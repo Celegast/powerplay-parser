@@ -220,14 +220,23 @@ This runs all three steps in sequence:
 # Refresh input.txt from the sheet (no game needed)
 python update_google_sheet.py --sync-input
 
-# Upload from an existing capture file (no game needed)
+# Full update — all systems (data + images)
 python update_google_sheet.py
 
 # Upload from a specific archive file
 python update_google_sheet.py -c auto_capture_outputs/powerplay_auto_capture_20260420_123456.txt
 
-# Data only, skip CP bar images
+# Images only — re-upload CP bars without touching UM/RF/timestamp (no capture file needed)
+python update_google_sheet.py --images-only
+
+# Data only — skip CP bar images
 python update_google_sheet.py --no-images
+
+# Update a single system only (case-insensitive substring match)
+python update_google_sheet.py --system "Tofana"
+
+# Single system, images only
+python update_google_sheet.py --images-only --system "Tofana"
 
 # Preview without writing to the sheet
 python update_google_sheet.py --dry-run

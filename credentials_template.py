@@ -6,3 +6,6 @@ WEB_APP_URL = ''
 
 # Must match SECRET_TOKEN in antal_priorities_updater.gs
 SECRET_TOKEN = ''
+
+# Firebase Realtime Database path key (from the ed-powerplay-tracker web app)
+FIREBASE_DB_KEY = ''

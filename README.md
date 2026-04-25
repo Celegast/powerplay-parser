@@ -17,6 +17,7 @@ A powerful Python tool for extracting powerplay system information from Elite Da
 - **System History Plotting**: Single-system CP history coloured by owning power (`plot_system.py`)
 - **Overall Summary**: Accumulated RF/UM stats across all stored cycles (`summarize_powers_overall.py`)
 - **Priority Sheet Integration**: One-command update of the group's Google Sheet with live data and CP bar images (`update_prio_sheet.bat`)
+- **Firebase Sync**: Direct sync of capture data to the Firebase Realtime Database backing the web tracker (`sync_firebase.py`)
 - **Debug Logging**: Comprehensive debug output for troubleshooting
 
 ## Prerequisites
@@ -196,6 +197,7 @@ Copy `credentials_template.py` to `credentials.py` (which is gitignored) and fil
 ```python
 WEB_APP_URL  = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec'
 SECRET_TOKEN = 'your-chosen-password'   # must match antal_priorities_updater.gs
+FIREBASE_DB_KEY = 'your-firebase-db-key'
 ```
 
 `credentials.py` is never committed — it stays local to your machine.
@@ -268,6 +270,33 @@ BAR_TARGET_WIDTH  = 368    # display width in pixels; height scales proportional
 
 When `antal_priorities_updater.gs` is edited, the live deployment must be updated:
 **Deploy → Manage deployments → edit → select "New version" → Deploy**. The URL stays the same.
+
+---
+
+## Firebase Sync
+
+`sync_firebase.py` pushes capture data directly to the Firebase Realtime Database backing the web tracker, replacing the copy-paste bulk import workflow.
+
+- Reads `powerplay_auto_capture.txt` (same source as the sheet updater)
+- For each system: fetches the existing record, appends a new data point to `cycles[N].data[]`, and writes it back
+- Deduplicates by timestamp — safe to run multiple times on the same capture
+- Creates new system documents automatically if a system isn't in Firebase yet
+
+```bash
+# Sync all systems
+python sync_firebase.py
+
+# Preview without writing
+python sync_firebase.py --dry-run
+
+# Single system (case-insensitive substring)
+python sync_firebase.py --system "ZI-N b9-1"
+
+# Custom capture file
+python sync_firebase.py -c auto_capture_outputs/powerplay_auto_capture_20260424_185900.txt
+```
+
+Set `FIREBASE_DB_KEY` in `credentials.py` before use (see Configure credentials above).
 
 ---
 
@@ -421,6 +450,7 @@ PowerplayParser/
 ├── update_google_sheet.py        # Google Sheet updater (data + CP bar images)
 ├── antal_priorities_updater.gs   # Apps Script to paste into the Google Sheet
 ├── update_prio_sheet.bat         # One-click: sync → capture → upload
+├── sync_firebase.py              # Direct Firebase Realtime Database sync
 ├── config.py                     # Configuration and screen coordinates
 ├── credentials_template.py       # Template for credentials.py (committed)
 ├── credentials.py                # Local secrets — gitignored, never committed

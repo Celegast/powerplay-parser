@@ -54,9 +54,39 @@ Required packages:
 - `requests` - HTTP calls for the Google Sheet updater
 - `openpyxl` - Excel file reading
 
+## Getting the Repository
+
+You need **git** to download and keep the repository up to date.
+
+### Installing git
+
+- **Windows**: Download and install from https://git-scm.com/download/win  
+  (Accept all defaults — this also installs Git Bash)
+- **macOS**: `brew install git`, or just run `git` in a terminal and macOS will prompt you to install it
+- **Linux**: `sudo apt install git` (Debian/Ubuntu) or `sudo dnf install git` (Fedora)
+
+Prefer a graphical tool? **GitHub Desktop** (https://desktop.github.com) bundles git and gives you a point-and-click interface — no terminal needed.
+
+### Cloning and updating
+
+**Git CLI:**
+```bash
+git clone https://github.com/Celegast/powerplay-parser.git
+cd powerplay-parser
+
+# Pull updates later
+git pull
+```
+
+**GitHub Desktop:**
+1. **File → Clone repository** → paste the URL → **Clone**
+2. To pull updates: **Repository → Pull** (or the **Fetch origin** button)
+
+After cloning, copy `credentials_template.py` to `credentials.py` and fill in your values (see [Configure credentials](#configure-credentials) below).
+
 ## Installation
 
-1. Clone or download this repository
+1. Clone the repository (see above)
 2. Install Tesseract OCR (see Prerequisites)
 3. Install Python dependencies:
    - **Recommended**: `pip install -e .` (uses pyproject.toml)

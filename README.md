@@ -189,14 +189,16 @@ Keeps the group's Google Sheet (`Antal Priorities`) up to date with one command:
    - *Who has access:* **Anyone**
 5. Copy the deployment URL
 
-### Configure `update_google_sheet.py`
+### Configure credentials
 
-Open `update_google_sheet.py` and set the two constants near the top:
+Copy `credentials_template.py` to `credentials.py` (which is gitignored) and fill in your values:
 
 ```python
 WEB_APP_URL  = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec'
 SECRET_TOKEN = 'your-chosen-password'   # must match antal_priorities_updater.gs
 ```
+
+`credentials.py` is never committed — it stays local to your machine.
 
 The sheet tab name (`"This Cycle 78"`, `"This Cycle 79"`, …) is derived automatically from the current cycle number — no changes needed each week.
 
@@ -420,6 +422,8 @@ PowerplayParser/
 ├── antal_priorities_updater.gs   # Apps Script to paste into the Google Sheet
 ├── update_prio_sheet.bat         # One-click: sync → capture → upload
 ├── config.py                     # Configuration and screen coordinates
+├── credentials_template.py       # Template for credentials.py (committed)
+├── credentials.py                # Local secrets — gitignored, never committed
 ├── input.txt                     # System list for auto-capture (synced from sheet)
 ├── pyproject.toml                # Project metadata and dependencies (recommended)
 ├── requirements.txt              # Python dependencies (legacy)

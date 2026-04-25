@@ -41,12 +41,13 @@ import cv2
 
 from summarize_powers import parse_powerplay_file, get_cycle_number
 import config
+import credentials
 
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-WEB_APP_URL  = ''   # Paste the Apps Script deployment URL here
-SECRET_TOKEN = ''   # Must match SECRET_TOKEN in antal_priorities_updater.gs
+WEB_APP_URL  = credentials.WEB_APP_URL    # set in credentials.py (gitignored)
+SECRET_TOKEN = credentials.SECRET_TOKEN   # must match SECRET_TOKEN in antal_priorities_updater.gs
 
 SHEET_NAME = f'This Cycle {get_cycle_number()}'
 

@@ -125,11 +125,21 @@ function getSheet(name) {
 var IMAGE_SPAN_COLS = 3;
 
 function insertBarImage(sheet, row, col, base64Data, width, height) {
-  // Merge E:G for this row so the cell image spans all three columns,
-  // matching the old floating-image layout. Re-merging an already-merged
-  // range is a no-op, so this is safe to call on every update.
+  // Remove any old floating images anchored to this row (left over from the
+  // previous insertImage() approach). Safe to call repeatedly — no-op once gone.
+  var floatingImages = sheet.getImages();
+  for (var i = floatingImages.length - 1; i >= 0; i--) {
+    if (floatingImages[i].getAnchorCell().getRow() === row) {
+      floatingImages[i].remove();
+    }
+  }
+
+  // Merge E:G so the cell image spans all three columns.
   var imageRange = sheet.getRange(row, col, 1, IMAGE_SPAN_COLS);
   imageRange.merge();
+
+  // Explicitly clear any existing cell image before writing the new one.
+  imageRange.clearContent();
 
   var dataUrl   = 'data:image/png;base64,' + base64Data;
   var cellImage = SpreadsheetApp.newCellImage()

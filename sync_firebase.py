@@ -25,8 +25,9 @@ import credentials
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-FIREBASE_BASE = 'https://ed-powerplay-tracker-default-rtdb.europe-west1.firebasedatabase.app'
-FIREBASE_PATH = f'sq/{credentials.FIREBASE_DB_KEY}/systems'
+FIREBASE_BASE     = 'https://ed-powerplay-tracker-default-rtdb.europe-west1.firebasedatabase.app'
+FIREBASE_PATH     = f'sq/{credentials.FIREBASE_DB_KEY}/systems'
+ALL_SYSTEMS_URL   = f'{FIREBASE_BASE}/{FIREBASE_PATH}.json'
 
 
 # ── Key sanitization ───────────────────────────────────────────────────────────
@@ -43,25 +44,6 @@ def make_url_key(system_key):
     return re.sub(r'[.#$\[\]/ ]', '_', system_key)
 
 
-def firebase_url(name):
-    system_key = make_system_key(name)
-    url_key    = make_url_key(system_key)
-    return f'{FIREBASE_BASE}/{FIREBASE_PATH}/{url_key}.json', system_key
-
-
-# ── Firebase helpers ───────────────────────────────────────────────────────────
-
-def fb_get(url):
-    resp = requests.get(url, timeout=15)
-    resp.raise_for_status()
-    return resp.json()  # None when Firebase has nothing at this path
-
-
-def fb_put(url, data):
-    resp = requests.put(url, json=data, timeout=15)
-    resp.raise_for_status()
-
-
 # ── Data merging ───────────────────────────────────────────────────────────────
 
 def build_data_point(sys_data, timestamp_str):
@@ -69,17 +51,17 @@ def build_data_point(sys_data, timestamp_str):
     rf = sys_data['reinforcement']
     cp = sys_data['initial_cp'] + rf - um
     return {
-        'timestamp':    timestamp_str,
-        'undermining':  um,
+        'timestamp':     timestamp_str,
+        'undermining':   um,
         'reinforcement': rf,
-        'cp':           cp,
+        'cp':            cp,
     }
 
 
-def merge_system(existing_doc, sys_data, system_key, cycle_str, timestamp_str):
+def merge_system(existing_doc, sys_data, system_key, cycle_str, timestamp_str, force=False):
     """
     Insert a new data point into an existing system document (or create the doc).
-    Returns (updated_doc, was_added).
+    Returns (updated_doc, action) where action is 'added', 'updated', or 'skipped'.
     """
     if existing_doc is None:
         doc = {'name': sys_data['name'], 'key': system_key, 'cycles': {}}
@@ -90,34 +72,38 @@ def merge_system(existing_doc, sys_data, system_key, cycle_str, timestamp_str):
 
     if cycle_str not in doc['cycles']:
         doc['cycles'][cycle_str] = {
-            'power':                   sys_data['power'],
-            'state':                   sys_data['state'].lower(),
-            'initialCP':               sys_data['initial_cp'],
-            'underminingThreshold':    0,
-            'reinforcementThreshold':  0,
-            'data':                    [],
+            'power':                  sys_data['power'],
+            'state':                  sys_data['state'].capitalize(),
+            'initialCP':              sys_data['initial_cp'],
+            'underminingThreshold':   0,
+            'reinforcementThreshold': 0,
+            'data':                   [],
         }
     else:
         cycle = doc['cycles'][cycle_str]
         cycle['power'] = sys_data['power']
-        cycle['state'] = sys_data['state'].lower()
+        cycle['state'] = sys_data['state'].capitalize()
 
     cycle = doc['cycles'][cycle_str]
     cycle.setdefault('data', [])
 
-    # Skip duplicate timestamps
-    existing_ts = {d.get('timestamp') for d in cycle['data']}
-    data_point  = build_data_point(sys_data, timestamp_str)
-    if data_point['timestamp'] in existing_ts:
-        return doc, False
+    data_point = build_data_point(sys_data, timestamp_str)
+    existing   = [d for d in cycle['data'] if d.get('timestamp') == timestamp_str]
+
+    if existing:
+        if not force:
+            return doc, 'skipped'
+        cycle['data'] = [d for d in cycle['data'] if d.get('timestamp') != timestamp_str]
+        cycle['data'].append(data_point)
+        return doc, 'updated'
 
     cycle['data'].append(data_point)
-    return doc, True
+    return doc, 'added'
 
 
 # ── Main sync logic ────────────────────────────────────────────────────────────
 
-def sync_firebase(system_map, data_timestamp, system_filter=None, dry_run=False):
+def sync_firebase(system_map, data_timestamp, system_filter=None, dry_run=False, force=False):
     cycle_num = get_cycle_number()
     cycle_str = str(cycle_num)
 
@@ -142,40 +128,69 @@ def sync_firebase(system_map, data_timestamp, system_filter=None, dry_run=False)
             sys.exit("Use a more specific substring.")
         systems = matches
 
-    print(f"Syncing {len(systems)} system(s) to Firebase  "
+    print(f"Syncing {len(systems)} system(s) to Firebase "
           f"(cycle {cycle_num}, timestamp {ts_str})")
     if dry_run:
         print("(dry-run - no writes will be sent)")
+
+    # One GET for all existing data
+    print("Fetching existing data from Firebase ...")
+    resp = requests.get(ALL_SYSTEMS_URL, timeout=30)
+    resp.raise_for_status()
+    all_existing = resp.json() or {}
+    print(f"  {len(all_existing)} systems in database")
     print()
 
-    added = skipped = errors = 0
+    updates = {}
+    added = updated = skipped = 0
 
     for sys_data in systems:
-        name = sys_data['name']
-        url, system_key = firebase_url(name)
+        name       = sys_data['name']
+        system_key = make_system_key(name)
+        url_key    = make_url_key(system_key)
 
-        try:
-            existing       = fb_get(url)
-            doc, was_added = merge_system(existing, sys_data, system_key, cycle_str, ts_str)
+        existing        = all_existing.get(url_key)
+        doc, action     = merge_system(existing, sys_data, system_key, cycle_str, ts_str, force=force)
 
-            if was_added and not dry_run:
-                fb_put(url, doc)
+        if dry_run:
+            tag = '[DRY]'
+        elif action == 'added':
+            tag = '[+]  '
+        elif action == 'updated':
+            tag = '[^]  '
+        else:
+            tag = '[=]  '
+        print(f"  {tag} {name[:55]:<55}  {action}")
 
-            tag    = '[DRY]' if dry_run else ('[+]  ' if was_added else '[=]  ')
-            detail = 'added' if was_added else 'skipped (duplicate timestamp)'
-            print(f"  {tag} {name[:55]:<55}  {detail}")
-
-            if was_added:
+        if action in ('added', 'updated'):
+            updates[url_key] = doc
+            if action == 'added':
                 added += 1
             else:
-                skipped += 1
-
-        except Exception as exc:
-            print(f"  [ERR] {name[:55]:<55}  {exc}")
-            errors += 1
+                updated += 1
+        else:
+            skipped += 1
 
     print()
-    print(f"Done: {added} added, {skipped} skipped (duplicate), {errors} errors")
+    parts = []
+    if added:   parts.append(f"{added} added")
+    if updated: parts.append(f"{updated} updated")
+    if skipped: parts.append(f"{skipped} skipped (duplicate)")
+    print("Result: " + ", ".join(parts))
+
+    if dry_run:
+        print("(dry-run - no changes sent)")
+        return
+
+    if not updates:
+        print("Nothing to update.")
+        return
+
+    # One PATCH for all updates
+    print(f"Sending {len(updates)} update(s) to Firebase ...")
+    resp = requests.patch(ALL_SYSTEMS_URL, json=updates, timeout=60)
+    resp.raise_for_status()
+    print("Done.")
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
@@ -200,6 +215,11 @@ def main():
         action='store_true',
         help='Print what would change without writing to the database'
     )
+    parser.add_argument(
+        '--force',
+        action='store_true',
+        help='Overwrite existing data points with the same timestamp instead of skipping them'
+    )
     args = parser.parse_args()
 
     if not os.path.isfile(args.capture):
@@ -217,6 +237,7 @@ def main():
         data_timestamp,
         system_filter=args.system,
         dry_run=args.dry_run,
+        force=args.force,
     )
 
 

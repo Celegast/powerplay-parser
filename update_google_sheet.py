@@ -275,7 +275,7 @@ def update_sheet(system_map, data_timestamp, update_images=True,
                 unmatched.append(system_name)
                 continue
             entry['timestamp'] = ts_str
-            entry['um']        = sys_data['undermining']
+            entry['um']        = sys_data['undermining_raw']
             entry['rf']        = sys_data['reinforcement']
 
         if update_images or images_only:

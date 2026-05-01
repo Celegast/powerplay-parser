@@ -477,8 +477,15 @@ def main():
 
     ocr = PowerplayOCR()
 
-    # Create directories for screenshots
-    os.makedirs('auto_capture/screenshots', exist_ok=True)
+    # Wipe stale capture data from previous runs so old images and OCR files
+    # from a different cycle don't get picked up by build_capture_index_map().
+    for _d in ['auto_capture/screenshots',
+               'auto_capture/debug/cropped',
+               'auto_capture/debug/ocr_text',
+               'auto_capture/debug/subsections']:
+        if os.path.exists(_d):
+            shutil.rmtree(_d)
+        os.makedirs(_d)
 
     # Search field coordinates: scale config values to actual screen resolution
     actual_width, actual_height = pyautogui.size()
@@ -514,8 +521,6 @@ def main():
 
             # Save screenshot with system name
             if screenshot_path:
-                import shutil
-
                 # Sanitize system name for filename (replace invalid chars)
                 safe_name = system_name.replace(' ', '_').replace('/', '-').replace('\\', '-')
 

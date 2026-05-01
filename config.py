@@ -56,6 +56,25 @@ PANEL_HEIGHT_EXTENDED = 840  # PANEL_BOTTOM_EXTENDED - PANEL_TOP
 SEARCH_FIELD_X = 1420         # was 2700 on 5120x1440 (2700 - 1280)
 SEARCH_FIELD_Y = 168
 
+# Keyboard character overrides for auto_capture typing.
+#
+# pyautogui.write() looks up each character via VkKeyScan(), which uses the
+# *active Windows keyboard layout*. This works correctly when the Windows layout
+# matches the physical keyboard (US, UK, French, Australian, etc.).
+#
+# Only add entries here if your Windows layout does NOT match your physical
+# keyboard and specific characters are typed incorrectly. Each entry maps a
+# problem character to the Windows virtual key code (VK) that produces it when
+# pressed WITHOUT a shift modifier.
+#
+# Example: German physical keyboard with Windows set to US-English layout.
+#   pyautogui.write('+') sends Shift+OEM_PLUS (the US way), but on the German
+#   physical keyboard that key gives '*'. Fix: press OEM_PLUS without shift.
+#   WRITE_VK_OVERRIDES = {'+': 0xBB}  # 0xBB = VK_OEM_PLUS
+#
+# Most users should leave this empty.
+WRITE_VK_OVERRIDES = {}
+
 # Dropdown Menu Configuration (relative to search field)
 DROPDOWN_OFFSET_X = -460     # dropdown_left = search_x - 460
 DROPDOWN_OFFSET_Y = 25       # dropdown_top = search_y + 25

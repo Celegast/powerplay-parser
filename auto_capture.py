@@ -13,6 +13,7 @@ from difflib import SequenceMatcher
 
 # Third-party imports
 import pyautogui
+import shutil
 import winsound
 
 # Local imports
@@ -377,6 +378,40 @@ def load_previous_capture(output_dir, current_time):
     print(f"  Loaded {len(previous_data)} systems from previous capture")
     return previous_data, is_same_cycle
 
+# Loaded from config — see config.py for full documentation and examples.
+_WRITE_VK_OVERRIDES = config.WRITE_VK_OVERRIDES
+
+def _write_text(text, interval=0.02):
+    """
+    Type text using pyautogui.write(). If the text contains characters that
+    pyautogui mistypes (see _WRITE_VK_OVERRIDES), those are handled one at a
+    time via keybd_event; surrounding plain segments are written in one call.
+    """
+    if not any(ch in _WRITE_VK_OVERRIDES for ch in text):
+        pyautogui.write(text, interval=interval)
+        return
+
+    import ctypes
+    KEYEVENTF_KEYUP = 0x0002
+    keybd = ctypes.windll.user32.keybd_event
+
+    segment = []
+    for ch in text:
+        if ch in _WRITE_VK_OVERRIDES:
+            if segment:
+                pyautogui.write(''.join(segment), interval=interval)
+                segment = []
+            vk = _WRITE_VK_OVERRIDES[ch]
+            keybd(vk, 0, 0, 0)
+            time.sleep(interval)
+            keybd(vk, 0, KEYEVENTF_KEYUP, 0)
+            time.sleep(interval)
+        else:
+            segment.append(ch)
+    if segment:
+        pyautogui.write(''.join(segment), interval=interval)
+
+
 def click_and_paste(x, y, text, debug_index=0):
     """
     Click at coordinates and type text with randomized movement and timing
@@ -398,12 +433,11 @@ def click_and_paste(x, y, text, debug_index=0):
     pyautogui.mouseUp()
     time.sleep(random.uniform(0.2, 1.0))
 
-    # Clear existing text with backspace
+    # Clear any existing text, then type with layout-aware overrides for
+    # special characters like '+' that pyautogui.write() mistypes on German keyboards.
     pyautogui.press('backspace')
     time.sleep(random.uniform(0.2, 1.0))
-
-    # Type the text directly (slower but more reliable)
-    pyautogui.write(text, interval=0.05)
+    _write_text(text)
 
     # Wait for dropdown to appear and stabilize
     time.sleep(1.2)  # Fixed delay to ensure dropdown is fully visible

@@ -112,6 +112,7 @@ For processing multiple systems automatically:
    ```
 
 3. The script will:
+   - Clear the debug output directories (`auto_capture/screenshots/`, `debug/cropped/`, `debug/ocr_text/`, `debug/subsections/`) so images from a previous run never bleed into the current one
    - Navigate to each system using the in-game search
    - Click the correct system from the dropdown
    - Capture and parse powerplay data
@@ -246,7 +247,7 @@ This runs all three steps in sequence:
 
 1. **Fetch system list** — reads col B of the Google Sheet and writes it to `input.txt` (picks up any priority changes the group made since the last run)
 2. **In-game capture** — launches `auto_capture.py`; switch to Elite Dangerous when prompted
-3. **Upload** — pushes UM, RF, timestamp, and CP-bar images to the sheet
+3. **Upload** — pushes UM, RF, timestamp, and CP-bar images to the sheet in batches of 10 systems per request to avoid Apps Script execution timeouts
 
 **Running steps individually:**
 
@@ -281,11 +282,13 @@ python update_google_sheet.py --dry-run
 | Column | Field | Value |
 |--------|-------|-------|
 | C | Updated (UTC) | Timestamp of the capture file |
-| E | CP bar image | Cropped status bar from the screenshot |
-| H | UM | Net undermining (decay-adjusted) |
+| E–G | CP bar image | Cropped status bar from the screenshot (spans three columns) |
+| H | UM | Raw undermining points (as captured from the game, before decay is applied) |
 | I | RF | Reinforcement points |
 
 Only rows whose system name (col B) appears in the capture file are touched. Systems below the `---END` marker in the sheet are ignored.
+
+**CP bar images** are stored as cell-anchored images spanning columns E–G, so they move correctly when rows are inserted or reordered. Each run replaces existing images cleanly. If you are upgrading from an older version of `antal_priorities_updater.gs` that placed images as floating objects, delete those floating images manually once — subsequent runs use cell images only.
 
 ### Adjusting the CP bar image
 
@@ -355,8 +358,7 @@ The parser uses a sophisticated multi-stage OCR approach:
    - Light morphological operations (1x1 kernel)
 
 4. **OCR Processing**
-   - Tesseract OCR with PSM 6 (uniform block) for text sections
-   - PSM 11 (sparse text) for dropdown detection
+   - Tesseract OCR with PSM 6 (uniform block) for text sections and dropdown detection
    - Custom preprocessing per section type
 
 5. **Data Parsing**
@@ -387,17 +389,18 @@ The parser automatically detects initial CP from the colored status bar:
 Auto-capture uses advanced dropdown handling:
 
 1. **Dynamic Cropping**:
-   - Scans from bottom-up to find where content ends
-   - Detects rows with 90%+ dark pixels
-   - Crops to show only the black dropdown area
+   - Scans from bottom-up through the dropdown region
+   - Stops at the first pair of rows that are both ≥90% dark pixels, then adds a 15 px margin
+   - Crops to show only the black dropdown area, correctly handling single-entry and multi-entry dropdowns alike
 
 2. **OCR Matching**:
-   - Reads all visible system names
-   - Exact match first, then fuzzy matching (≥70% similarity)
+   - Reads all visible system names using Tesseract PSM 6 (uniform block) to keep multi-word names on one line
+   - Exact match first, then fuzzy matching (≥65% similarity)
+   - Fallback: clicks the first entry if no match is found and the search term is at least 5 characters
    - Handles OCR errors in system names gracefully
 
 3. **Click Precision**:
-   - Quick mouse press (50-100ms) to avoid triggering route plotting
+   - Quick mouse press (50–100 ms) to avoid triggering route plotting
    - Randomized timing to appear more natural
 
 ## Output Format
@@ -446,7 +449,19 @@ QUIT_HOTKEY = 'esc'
 
 # OCR Configuration
 OCR_CONFIG = r'--oem 3 --psm 6'
+
+# Keyboard character overrides for auto_capture typing
+# Only needed if your Windows keyboard layout does not match your physical keyboard.
+# Most users should leave this empty:
+WRITE_VK_OVERRIDES = {}
+
+# Example: German physical keyboard + Windows US-English layout
+# pyautogui.write('+') sends Shift+OEM_PLUS (US way), but on a German keyboard
+# that key gives '*'. Fix: press OEM_PLUS without shift (VK 0xBB).
+# WRITE_VK_OVERRIDES = {'+': 0xBB}
 ```
+
+`WRITE_VK_OVERRIDES` maps a character that gets typed incorrectly to the Windows virtual key code (VK) that produces it when pressed without a Shift modifier. The auto-capture script falls back to per-character `keybd_event` calls for those characters and uses the normal fast `pyautogui.write()` path for everything else.
 
 ## Recognized Powerplay Leaders
 

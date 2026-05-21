@@ -33,8 +33,9 @@ class PowerplayOCR:
             tesseract_path: Path to tesseract executable (optional)
             use_easyocr: Whether to enable EasyOCR as fallback (default: True)
         """
-        if tesseract_path:
-            pytesseract.pytesseract.tesseract_cmd = tesseract_path
+        path = tesseract_path or config.TESSERACT_PATH
+        if path:
+            pytesseract.pytesseract.tesseract_cmd = path
 
         # Initialize EasyOCR if enabled (lazy loading to save memory)
         self.use_easyocr = use_easyocr
@@ -120,7 +121,7 @@ class PowerplayOCR:
         height, width = img.shape[:2]
 
         # If full screenshot, crop to panel first
-        if width > 2000:
+        if width / height > 1.5:
             pil_panel = self.crop_powerplay_panel(image_path)
             img = cv2.cvtColor(np.array(pil_panel), cv2.COLOR_RGB2BGR)
             height, width = img.shape[:2]
@@ -227,8 +228,8 @@ class PowerplayOCR:
 
         height, width = img.shape[:2]
 
-        # If this looks like a full screenshot (width > 2000), crop to panel first
-        if width > 2000:
+        # If this looks like a full screenshot, crop to panel first
+        if width / height > 1.5:
             pil_panel = self.crop_powerplay_panel(image_path)
             img = cv2.cvtColor(np.array(pil_panel), cv2.COLOR_RGB2BGR)
             height, width = img.shape[:2]
@@ -326,8 +327,8 @@ class PowerplayOCR:
 
         height, width = img.shape[:2]
 
-        # If this looks like a full screenshot (width > 2000), crop to extended panel first
-        if width > 2000:
+        # If this looks like a full screenshot, crop to extended panel first
+        if width / height > 1.5:
             pil_panel = self.crop_powerplay_panel(image_path, extended=True)
             img = cv2.cvtColor(np.array(pil_panel), cv2.COLOR_RGB2BGR)
             height, width = img.shape[:2]
@@ -1262,7 +1263,7 @@ class PowerplayOCR:
 
         try:
             # Crop status description region to check for keywords
-            if width > 2000:
+            if width / height > 1.5:
                 # Full screenshot - crop to status region
                 # Status is at roughly (PANEL_LEFT+14, PANEL_TOP+212) to (PANEL_LEFT+734, PANEL_TOP+280)
                 scale = height / config.EXPECTED_SCREEN_HEIGHT

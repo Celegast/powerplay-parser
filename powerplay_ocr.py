@@ -6,6 +6,8 @@ Extracts system information from screenshots
 # Standard library imports
 import os
 import re
+import shutil
+import sys
 import time
 from datetime import datetime
 
@@ -20,8 +22,27 @@ from PIL import Image
 # Local imports
 import config
 
-# Uncomment and set if tesseract is not in PATH
-# pytesseract.pytesseract.tesseract_cmd = r'C:\Tools\Tesseract-OCR\tesseract.exe'
+def _find_tesseract(explicit_path=None):
+    """
+    Resolve the Tesseract executable path.
+    Priority: explicit argument → config.TESSERACT_PATH → system PATH.
+    Exits with a clear message if Tesseract cannot be found anywhere.
+    """
+    candidates = [p for p in (explicit_path, config.TESSERACT_PATH) if p]
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+        print(f"WARNING: Tesseract not found at '{path}', trying fallback...")
+
+    found = shutil.which('tesseract')
+    if found:
+        return found
+
+    sys.exit(
+        "ERROR: Tesseract OCR not found.\n"
+        "Install it from https://github.com/UB-Mannheim/tesseract/wiki\n"
+        "or set TESSERACT_PATH in config.py to the correct location."
+    )
 
 
 class PowerplayOCR:
@@ -33,9 +54,7 @@ class PowerplayOCR:
             tesseract_path: Path to tesseract executable (optional)
             use_easyocr: Whether to enable EasyOCR as fallback (default: True)
         """
-        path = tesseract_path or config.TESSERACT_PATH
-        if path:
-            pytesseract.pytesseract.tesseract_cmd = path
+        pytesseract.pytesseract.tesseract_cmd = _find_tesseract(tesseract_path)
 
         # Initialize EasyOCR if enabled (lazy loading to save memory)
         self.use_easyocr = use_easyocr

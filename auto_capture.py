@@ -501,8 +501,14 @@ def main():
     previous_data, is_same_cycle = load_previous_capture(output_dir, current_time)
 
     print("\n" + "=" * 80)
+    print("\nBefore continuing, ensure the following:")
+    print("  1. Elite Dangerous is running with the Galaxy Map open")
+    print("  2. The Powerplay view is open in the right-hand panel")
+    print("     (select the Powerplay tab in the panel on the right side)")
+    print()
+    print("Press ENTER when ready, then switch back to Elite Dangerous.")
+    input()
     print("\nYou have 5 seconds to switch to Elite Dangerous...")
-    print("Make sure the Galaxy Map is open and ready!")
     for i in range(5, 0, -1):
         print(f"Starting in {i}...", end='\r')
         time.sleep(1)

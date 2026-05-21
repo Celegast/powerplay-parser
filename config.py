@@ -6,7 +6,7 @@ Configuration file for PowerplayParser
 # If tesseract is not in your system PATH, specify the full path here
 # Windows example: r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 # Linux example: '/usr/bin/tesseract'
-TESSERACT_PATH = None
+TESSERACT_PATH = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 # Screenshot Configuration
 SCREENSHOT_HOTKEY = 'f9'  # Key to press for capturing screenshots

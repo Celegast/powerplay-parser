@@ -212,6 +212,25 @@ def post_updates(systems_payload):
     return _parse_response(resp, 'POST')
 
 
+# ── Sheet status indicator ────────────────────────────────────────────────────
+
+def set_sheet_status(message):
+    """Write (or clear) the update-in-progress indicator cell in the sheet.
+
+    Passes set_status=message to the Apps Script endpoint, which writes the
+    text into STATUS_ROW/STATUS_COL with a yellow background (non-empty) or
+    clears the cell entirely (empty string).  Errors are silently ignored so
+    a network hiccup never aborts the main workflow.
+    """
+    _check_config()
+    body = {'token': SECRET_TOKEN, 'sheet': SHEET_NAME, 'set_status': message}
+    try:
+        resp = requests.post(WEB_APP_URL, json=body, timeout=15)
+        resp.raise_for_status()
+    except Exception:
+        pass
+
+
 # ── Sync input.txt from sheet ─────────────────────────────────────────────────
 
 def sync_input_txt(input_file='input.txt'):
@@ -219,12 +238,17 @@ def sync_input_txt(input_file='input.txt'):
     Read the current system list from the Google Sheet and write it to input.txt
     so that auto_capture.py captures exactly the systems the sheet tracks.
     """
+    print("Setting update indicator in sheet …")
+    set_sheet_status("⏳ Update in progress…")
+
     print("Fetching system list from Google Sheet …")
     systems = fetch_system_list()
+    print(f"  {len(systems)} systems")
     with open(input_file, 'w', encoding='utf-8') as f:
         for name in systems:
             f.write(name + '\n')
     print(f"Wrote {len(systems)} systems to {input_file}")
+    print("Sheet will show '⏳ Update in progress…' until the full update completes.")
 
 
 # ── Main update logic ──────────────────────────────────────────────────────────
@@ -341,6 +365,9 @@ def update_sheet(system_map, data_timestamp, update_images=True,
         print(f"Image errors:")
         for e in all_image_errors:
             print(f"  {e}")
+
+    print("Clearing update indicator …")
+    set_sheet_status("")
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────

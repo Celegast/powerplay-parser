@@ -14,8 +14,9 @@
  * every request so no changes are needed here when a new cycle starts.
  *
  * The script exposes two endpoints:
- *   GET  ?token=...&sheet=...    → returns current system list (for --sync-input)
- *   POST (JSON body)             → updates UM, RF, timestamp, and CP bar images
+ *   GET  ?token=...&sheet=...            → returns current system list (for --sync-input)
+ *   POST (JSON body, systems=[...])      → updates UM, RF, timestamp, and CP bar images
+ *   POST (JSON body, set_status="...")   → writes/clears the update-status indicator cell
  */
 
 var SECRET_TOKEN = 'change-me-before-deploying';
@@ -26,6 +27,11 @@ var COL_TIMESTAMP = 3;   // C — Updated (UTC)
 var COL_UM        = 8;   // H — Undermining
 var COL_RF        = 9;   // I — Reinforcement
 var COL_IMAGE     = 5;   // E — CP bar image
+
+// Update-status indicator cell — pick any unused cell in your sheet.
+// Default: A1. Change row/col to wherever you want the indicator to appear.
+var STATUS_ROW = 1;
+var STATUS_COL = 6;   // F
 
 
 // ── GET: return system list ────────────────────────────────────────────────────
@@ -67,6 +73,12 @@ function doPost(e) {
 
     var sheet = getSheet(payload.sheet || '');
     if (!sheet) return jsonResponse({error: 'Sheet not found: ' + payload.sheet});
+
+    // Status-only update (set_status present → write/clear indicator cell and return)
+    if (payload.set_status !== undefined) {
+      setStatusCell(sheet, payload.set_status);
+      return jsonResponse({ok: true});
+    }
 
     var values = sheet.getDataRange().getValues();
 
@@ -147,6 +159,19 @@ function insertBarImage(sheet, row, col, base64Data, width, height) {
       .setAltTextTitle('CP bar')
       .build();
   imageRange.setValue(cellImage);
+}
+
+function setStatusCell(sheet, message) {
+  var cell = sheet.getRange(STATUS_ROW, STATUS_COL);
+  if (message) {
+    cell.setValue(message);
+    cell.setBackground('#fbbc04');  // Google yellow
+    cell.setFontWeight('bold');
+  } else {
+    cell.setValue('');
+    cell.setBackground(null);
+    cell.setFontWeight('normal');
+  }
 }
 
 function jsonResponse(obj) {

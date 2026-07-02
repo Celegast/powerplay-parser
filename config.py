@@ -39,11 +39,11 @@ EXPECTED_SCREEN_HEIGHT = 1440  # Reference height (pixels)
 
 # Powerplay Panel Coordinates — X values in 16:9-zone-relative space at 1440 height
 # (reference ultrawide values minus the 1280px ultrawide offset)
-PANEL_LEFT = 1636             # was 2916 on 5120x1440 (2916 - 1280)
+PANEL_LEFT = 1628             # was 2908 on 5120x1440 (2908 - 1280); panel shifted 8px left after game update
 PANEL_TOP = 224
-PANEL_RIGHT_STANDARD = 2376  # Standard panel right edge (3656 - 1280); width: 740px
+PANEL_RIGHT_STANDARD = 2368  # Standard panel right edge (3648 - 1280); width: 740px
 PANEL_BOTTOM_STANDARD = 870  # Standard panel bottom; height: 646px
-PANEL_RIGHT_EXTENDED = 2378  # Extended panel right edge (3658 - 1280); width: 742px
+PANEL_RIGHT_EXTENDED = 2370  # Extended panel right edge (3650 - 1280); width: 742px
 PANEL_BOTTOM_EXTENDED = 1064  # Extended panel bottom; height: 840px
 
 # Calculated Panel Dimensions

@@ -26,6 +26,8 @@ Options:
   --no-images          Skip CP bar image updates (data only)
   --system SYSTEM      Only update the one system whose name contains SYSTEM (case-insensitive)
   --dry-run            Print what would change without modifying the sheet
+  --sheet SHEET        Target a specific sheet tab by exact name (default: "This Cycle N")
+  --acquisitions       Shorthand for --sheet Acquisitions --no-images
 """
 
 import os
@@ -49,7 +51,8 @@ import credentials
 WEB_APP_URL  = credentials.WEB_APP_URL    # set in credentials.py (gitignored)
 SECRET_TOKEN = credentials.SECRET_TOKEN   # must match SECRET_TOKEN in antal_priorities_updater.gs
 
-SHEET_NAME = f'This Cycle {get_cycle_number()}'
+DEFAULT_SHEET_NAME  = f'This Cycle {get_cycle_number()}'
+ACQUISITIONS_SHEET  = 'Acquisitions'
 
 # CP bar region within the cropped panel image (at 740×646 reference size)
 BAR_LEFT   = 16
@@ -185,10 +188,10 @@ def _parse_response(resp, method):
         sys.exit(1)
 
 
-def fetch_system_list():
+def fetch_system_list(sheet_name):
     """GET the current system list from the Apps Script endpoint."""
     _check_config()
-    resp = requests.get(WEB_APP_URL, params={'token': SECRET_TOKEN, 'sheet': SHEET_NAME}, timeout=30)
+    resp = requests.get(WEB_APP_URL, params={'token': SECRET_TOKEN, 'sheet': sheet_name}, timeout=30)
     resp.raise_for_status()
     data = _parse_response(resp, 'GET')
     if 'error' in data:
@@ -199,12 +202,12 @@ def fetch_system_list():
     return systems[:end]
 
 
-def post_updates(systems_payload):
+def post_updates(systems_payload, sheet_name):
     """POST a list of system updates to the Apps Script endpoint."""
     _check_config()
     body = {
         'token':   SECRET_TOKEN,
-        'sheet':   SHEET_NAME,
+        'sheet':   sheet_name,
         'systems': systems_payload,
     }
     resp = requests.post(WEB_APP_URL, json=body, timeout=120)
@@ -214,7 +217,7 @@ def post_updates(systems_payload):
 
 # ── Sheet status indicator ────────────────────────────────────────────────────
 
-def set_sheet_status(message):
+def set_sheet_status(message, sheet_name):
     """Write (or clear) the update-in-progress indicator cell in the sheet.
 
     Passes set_status=message to the Apps Script endpoint, which writes the
@@ -223,7 +226,7 @@ def set_sheet_status(message):
     a network hiccup never aborts the main workflow.
     """
     _check_config()
-    body = {'token': SECRET_TOKEN, 'sheet': SHEET_NAME, 'set_status': message}
+    body = {'token': SECRET_TOKEN, 'sheet': sheet_name, 'set_status': message}
     try:
         resp = requests.post(WEB_APP_URL, json=body, timeout=15)
         resp.raise_for_status()
@@ -233,27 +236,27 @@ def set_sheet_status(message):
 
 # ── Sync input.txt from sheet ─────────────────────────────────────────────────
 
-def sync_input_txt(input_file='input.txt'):
+def sync_input_txt(sheet_name, input_file='input.txt'):
     """
     Read the current system list from the Google Sheet and write it to input.txt
     so that auto_capture.py captures exactly the systems the sheet tracks.
     """
-    print("Setting update indicator in sheet …")
-    set_sheet_status("⏳ Update in progress…")
+    print(f"Setting update indicator in '{sheet_name}' …")
+    set_sheet_status("⏳ Update in progress…", sheet_name)
 
-    print("Fetching system list from Google Sheet …")
-    systems = fetch_system_list()
+    print(f"Fetching system list from '{sheet_name}' …")
+    systems = fetch_system_list(sheet_name)
     print(f"  {len(systems)} systems")
     with open(input_file, 'w', encoding='utf-8') as f:
         for name in systems:
             f.write(name + '\n')
     print(f"Wrote {len(systems)} systems to {input_file}")
-    print("Sheet will show '⏳ Update in progress…' until the full update completes.")
+    print(f"Sheet will show '⏳ Update in progress…' until the full update completes.")
 
 
 # ── Main update logic ──────────────────────────────────────────────────────────
 
-def update_sheet(system_map, data_timestamp, update_images=True,
+def update_sheet(system_map, data_timestamp, sheet_name, update_images=True,
                  images_only=False, system_filter=None, dry_run=False):
     # Format timestamp as ISO 8601 so Apps Script can parse it as a Date object,
     # which satisfies the date-validation rule on column C.
@@ -267,8 +270,8 @@ def update_sheet(system_map, data_timestamp, update_images=True,
     capture_index_map = build_capture_index_map() if (update_images or images_only) else {}
 
     # Fetch system list from the sheet (sheet is source of truth)
-    print("Fetching system list from Google Sheet …")
-    sheet_systems = fetch_system_list()
+    print(f"Fetching system list from '{sheet_name}' …")
+    sheet_systems = fetch_system_list(sheet_name)
 
     # Filter to a single system if requested
     if system_filter:
@@ -348,7 +351,7 @@ def update_sheet(system_map, data_timestamp, update_images=True,
 
     for batch_num, batch in enumerate(batches, 1):
         print(f"  Batch {batch_num}/{len(batches)} ({len(batch)} systems) …", end=' ', flush=True)
-        result = post_updates(batch)
+        result = post_updates(batch, sheet_name)
         if 'error' in result:
             print(f"ERROR: {result['error']}")
         else:
@@ -367,7 +370,7 @@ def update_sheet(system_map, data_timestamp, update_images=True,
             print(f"  {e}")
 
     print("Clearing update indicator …")
-    set_sheet_status("")
+    set_sheet_status("", sheet_name)
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
@@ -407,10 +410,32 @@ def main():
         action='store_true',
         help='Print what would change without modifying the sheet'
     )
+    parser.add_argument(
+        '--sheet',
+        metavar='SHEET',
+        default=None,
+        help='Target sheet tab by exact name (default: "This Cycle N")'
+    )
+    parser.add_argument(
+        '--acquisitions',
+        action='store_true',
+        help='Shorthand for --sheet Acquisitions --no-images'
+    )
     args = parser.parse_args()
 
+    # Resolve target sheet name
+    if args.acquisitions:
+        sheet_name = ACQUISITIONS_SHEET
+    elif args.sheet:
+        sheet_name = args.sheet
+    else:
+        sheet_name = DEFAULT_SHEET_NAME
+
+    # Acquisitions sheet never has CP bar images
+    no_images = args.no_images or args.acquisitions
+
     if args.sync_input:
-        sync_input_txt()
+        sync_input_txt(sheet_name)
         return
 
     system_map     = {}
@@ -428,7 +453,8 @@ def main():
     update_sheet(
         system_map,
         data_timestamp,
-        update_images=not args.no_images,
+        sheet_name=sheet_name,
+        update_images=not no_images,
         images_only=args.images_only,
         system_filter=args.system,
         dry_run=args.dry_run,

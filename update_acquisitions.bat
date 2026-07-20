@@ -1,12 +1,12 @@
 @echo off
 cd /d "%~dp0"
 echo ============================================
-echo  Antal Priorities Sheet Updater — This Cycle
+echo  Antal Priorities Sheet Updater — Acquisitions
 echo ============================================
 echo.
 
-echo [1/3] Fetching system list from Google Sheet...
-python update_google_sheet.py --sync-input
+echo [1/3] Fetching system list from Acquisitions sheet...
+python update_google_sheet.py --sync-input --acquisitions
 if errorlevel 1 (
     echo.
     echo ERROR in step 1 - aborting.
@@ -28,8 +28,8 @@ if errorlevel 1 (
 pause
 
 echo.
-echo [3/3] Uploading data and images to Google Sheet...
-python update_google_sheet.py
+echo [3/3] Uploading data to Acquisitions sheet (no CP bar images)...
+python update_google_sheet.py --acquisitions
 if errorlevel 1 (
     echo.
     echo ERROR in step 3 - aborting.

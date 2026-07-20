@@ -237,26 +237,47 @@ The sheet tab name (`"This Cycle 78"`, `"This Cycle 79"`, …) is derived automa
 
 ### Running the updater
 
-**Full workflow in one command (recommended):**
+Two batch scripts cover the two sheet tabs:
 
+| Script | Target sheet | Steps |
+|--------|-------------|-------|
+| `update_prio_sheet.bat` | `This Cycle N` | sync → in-game capture → upload (data + images) |
+| `update_acquisitions.bat` | `Acquisitions` | sync → in-game capture → upload (data only, no CP bar images) |
+
+**Current-cycle priorities (recommended):**
 ```
 update_prio_sheet.bat
 ```
-
-This runs all three steps in sequence:
-
-1. **Fetch system list** — reads col B of the Google Sheet and writes it to `input.txt` (picks up any priority changes the group made since the last run)
+Runs three steps in sequence:
+1. **Fetch system list** — reads col B of the `This Cycle N` sheet and writes it to `input.txt`
 2. **In-game capture** — launches `auto_capture.py`; switch to Elite Dangerous when prompted
-3. **Upload** — pushes UM, RF, timestamp, and CP-bar images to the sheet in batches of 10 systems per request to avoid Apps Script execution timeouts
+3. **Upload** — pushes UM, RF, timestamp, and CP-bar images in batches of 10 to avoid Apps Script timeouts
+
+During steps 2 and 3, cell A1 of the sheet shows **⏳ Update in progress…** (yellow) so team members can see that an update is underway. It is cleared automatically when the upload completes. The status cell row/column can be changed via `STATUS_ROW`/`STATUS_COL` in `antal_priorities_updater.gs`.
+
+**Acquisitions tab:**
+```
+update_acquisitions.bat
+```
+Same three-step flow as the cycle updater, but targets the `Acquisitions` sheet and never uploads CP bar images (the tab doesn't have image columns).
 
 **Running steps individually:**
 
 ```bash
-# Refresh input.txt from the sheet (no game needed)
+# Refresh input.txt from This Cycle sheet (default)
 python update_google_sheet.py --sync-input
 
-# Full update — all systems (data + images)
+# Refresh input.txt from the Acquisitions sheet
+python update_google_sheet.py --sync-input --acquisitions
+
+# Full update — all systems (data + images) to This Cycle sheet
 python update_google_sheet.py
+
+# Update the Acquisitions sheet (data only, no images)
+python update_google_sheet.py --acquisitions
+
+# Target any sheet tab by exact name
+python update_google_sheet.py --sheet "Last Cycle 80"
 
 # Upload from a specific archive file
 python update_google_sheet.py -c auto_capture_outputs/powerplay_auto_capture_20260420_123456.txt
@@ -494,7 +515,8 @@ PowerplayParser/
 ├── plot_system.py                # CP history graph for a single system
 ├── update_google_sheet.py        # Google Sheet updater (data + CP bar images)
 ├── antal_priorities_updater.gs   # Apps Script to paste into the Google Sheet
-├── update_prio_sheet.bat         # One-click: sync → capture → upload
+├── update_prio_sheet.bat         # One-click: sync → capture → upload (This Cycle sheet)
+├── update_acquisitions.bat       # One-click: sync → capture → upload, no CP bar images (Acquisitions sheet)
 ├── sync_firebase.py              # Direct Firebase Realtime Database sync
 ├── config.py                     # Configuration and screen coordinates
 ├── credentials_template.py       # Template for credentials.py (committed)
@@ -522,6 +544,7 @@ PowerplayParser/
 - Standard in-game UI scaling
 - Ensure powerplay panel is fully visible
 - Good contrast with clear text
+- If a game update moves the powerplay panel, adjust `PANEL_LEFT` and the `PANEL_RIGHT_*` values in `config.py` by the same pixel offset (positive = panel moved right, negative = moved left). The panel height values rarely change.
 
 ### Auto-Capture Tips
 - Position game window consistently

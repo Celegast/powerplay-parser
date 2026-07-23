@@ -125,6 +125,16 @@ def parse_powerplay_file(filepath):
             except ValueError:
                 continue
             state = 'CONTESTED'
+        elif len(numeric_parts) == 1:
+            # Uncontested UNOCCUPIED: only our power is present; the single value
+            # is the control score from bar detection (sits in the Initial CP column).
+            # Map it to reinforcement so the sheet uploader writes it to the RF cell.
+            try:
+                undermining = 0
+                reinforcement = int(numeric_parts[0].replace(',', ''))
+                initial_cp = 0
+            except ValueError:
+                continue
         else:
             continue
 

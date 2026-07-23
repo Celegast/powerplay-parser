@@ -325,13 +325,18 @@ class PowerplayOCR:
         Subsections (relative to extended cropped panel):
         - system_name: (14, 56) - (552, 96)
         - system_status: (14, 212) - (734, 272)
-        - power_1st_name: (106, 330) - (412, 360)
-        - power_1st_score: (416, 330) - (738, 360)
-        - power_2nd_name: (106, 464) - (412, 494)
+        - power_1st_name: (106, 330) - (412, 360)    top visual section name
+        - power_1st_score: (416, 330) - (738, 360)   top visual section score
+        - power_2nd_name: (106, 464) - (412, 494)    EXPANSION/CONTESTED 2nd section
         - power_2nd_score: (416, 464) - (738, 494)
-        - power_your_name: (106, 692) - (412, 722)
+        - power_your_name: (106, 692) - (412, 722)   EXPANSION/CONTESTED your section
         - power_your_score: (416, 692) - (738, 722)
         - power_your_rank: (108, 646) - (170, 674)
+        - power_top_rank_badge: (40, 281) - (160, 318)         rank badge of top section
+        - power_bottom_name_early: (106, 445) - (412, 495)  bottom name, 1st-at-top layout
+        - power_bottom_score_early: (416, 445) - (738, 495)
+        - power_bottom_name_late: (106, 525) - (412, 575)   bottom name, 2nd-at-top layout
+        - power_bottom_score_late: (416, 525) - (738, 575)
 
         Args:
             image_path: Path to the image file (can be full screenshot or extended cropped panel)
@@ -432,6 +437,46 @@ class PowerplayOCR:
                 'right': int(736 * width_scale),
                 'bottom': int(134 * height_scale),
                 'description': 'Data age (X MINUTES AGO)'
+            },
+            # UNOCCUPIED competitive panels: the two powers can appear in either order.
+            # "early" crops target the 2nd-place power when 1st-place is at the top
+            # (bottom power directly below top power's bar, ~y=445-495).
+            # "late" crops target the 1st-place power when 2nd-place is at the top
+            # (bottom power below the threshold-label gap, ~y=525-575).
+            'power_top_rank_badge': {
+                'left': int(40 * width_scale),
+                'top': int(281 * height_scale),
+                'right': int(160 * width_scale),
+                'bottom': int(318 * height_scale),
+                'description': 'Rank badge ("1st"/"2nd") of the top visual power section'
+            },
+            'power_bottom_name_early': {
+                'left': int(106 * width_scale),
+                'top': int(445 * height_scale),
+                'right': int(412 * width_scale),
+                'bottom': int(495 * height_scale),
+                'description': 'Bottom power name — 1st-at-top layout (2nd power ~y=460)'
+            },
+            'power_bottom_score_early': {
+                'left': int(416 * width_scale),
+                'top': int(445 * height_scale),
+                'right': int(738 * width_scale),
+                'bottom': int(495 * height_scale),
+                'description': 'Bottom power score — 1st-at-top layout'
+            },
+            'power_bottom_name_late': {
+                'left': int(106 * width_scale),
+                'top': int(525 * height_scale),
+                'right': int(412 * width_scale),
+                'bottom': int(575 * height_scale),
+                'description': 'Bottom power name — 2nd-at-top layout (1st power ~y=540)'
+            },
+            'power_bottom_score_late': {
+                'left': int(416 * width_scale),
+                'top': int(525 * height_scale),
+                'right': int(738 * width_scale),
+                'bottom': int(575 * height_scale),
+                'description': 'Bottom power score — 2nd-at-top layout'
             }
         }
 
@@ -1248,6 +1293,135 @@ class PowerplayOCR:
                     os.unlink(tmp_path)
                 except:
                     pass
+
+        # UNOCCUPIED competitive: the two powers can be displayed in either visual order.
+        # Use the rank badge of the top section to determine actual ranks, then read the
+        # bottom power from a wide crop that covers both possible vertical positions.
+        if (info.get('system_status') == 'UNOCCUPIED'
+                and 'power_top_rank_badge' in subsections):
+
+            # Step 1: Determine actual rank of the top visual section.
+            top_power_is_1st = True  # conservative default
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                tmp_path = tmp.name
+                subsections['power_top_rank_badge'].save(tmp_path)
+            try:
+                for psm in [8, 7, 13]:
+                    for method in ['none', 'threshold', 'upscale']:
+                        text = pytesseract.image_to_string(
+                            self.preprocess_image(tmp_path, method=method, crop_panel=False),
+                            config=f'--oem 3 --psm {psm} --dpi 300'
+                        ).strip().upper()
+                        rank_match = re.search(r'(\d+)\s*(?:ST|ND|RD|TH)', text)
+                        if rank_match:
+                            top_power_is_1st = (int(rank_match.group(1)) == 1)
+                            break
+                        # Fallbacks for partial OCR (e.g. "2N" when "d" is clipped)
+                        if re.search(r'\b2\b', text) or 'ND' in text or re.match(r'^2', text.strip()):
+                            top_power_is_1st = False
+                            break
+                        if re.search(r'\b1\b', text) or 'ST' in text or re.match(r'^1', text.strip()):
+                            top_power_is_1st = True
+                            break
+                    else:
+                        continue
+                    break
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
+
+            # Step 2: Get the top power info already parsed (assigned rank=1 by the earlier loop).
+            top_power_info = next((p for p in info['powers'] if p.get('rank') == 1), None)
+
+            # Step 3: Read the bottom visual section.
+            # The bottom power's vertical position depends on layout:
+            #   "early" (y≈445-495): used when 1st is at top — 2nd power sits right below top bar
+            #   "late"  (y≈525-575): used when 2nd is at top — 1st power is below threshold labels
+            name_key = 'power_bottom_name_early' if top_power_is_1st else 'power_bottom_name_late'
+            score_key = 'power_bottom_score_early' if top_power_is_1st else 'power_bottom_score_late'
+
+            from difflib import SequenceMatcher
+            bottom_power_name = ''
+            bottom_power_score = -1
+
+            if name_key in subsections:
+                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                    tmp_path = tmp.name
+                    subsections[name_key].save(tmp_path)
+                try:
+                    best_match = None
+                    best_ratio = 0.7
+                    for method in ['upscale', 'threshold', 'none']:
+                        text = pytesseract.image_to_string(
+                            self.preprocess_image(tmp_path, method=method, crop_panel=False),
+                            config='--oem 3 --psm 7 --dpi 300'
+                        ).upper()
+                        for power in power_names:
+                            if power in text:
+                                best_match = power
+                                break
+                            ratio = SequenceMatcher(None, text.replace('\n', ' '), power).ratio()
+                            if ratio > best_ratio:
+                                best_ratio = ratio
+                                best_match = power
+                        if best_match:
+                            break
+                    if best_match:
+                        bottom_power_name = best_match.title()
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except:
+                        pass
+
+            if score_key in subsections:
+                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                    tmp_path = tmp.name
+                    subsections[score_key].save(tmp_path)
+                try:
+                    for method in ['none', 'upscale', 'threshold']:
+                        text = pytesseract.image_to_string(
+                            self.preprocess_image(tmp_path, method=method, crop_panel=False),
+                            config='--oem 3 --psm 7 --dpi 300'
+                        ).strip()
+                        number_match = re.search(r'(\d{1,}(?:,\d{3})*)', text)
+                        if number_match:
+                            try:
+                                bottom_power_score = int(number_match.group(1).replace(',', ''))
+                                break
+                            except ValueError:
+                                pass
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except:
+                        pass
+
+            # Step 4: Rebuild powers list with correct rank assignments.
+            if top_power_info or bottom_power_name:
+                info['powers'] = []
+                if top_power_info:
+                    top_actual_rank = 1 if top_power_is_1st else 2
+                    info['powers'].append({
+                        'name': top_power_info['name'],
+                        'score': top_power_info['score'],
+                        'rank': top_actual_rank
+                    })
+                if bottom_power_name:
+                    bottom_actual_rank = 2 if top_power_is_1st else 1
+                    info['powers'].append({
+                        'name': bottom_power_name,
+                        'score': max(bottom_power_score, 0),
+                        'rank': bottom_actual_rank
+                    })
+                # Sync convenience fields
+                for p in info['powers']:
+                    if p['rank'] == 1:
+                        info['controlling_power'] = p['name']
+                    elif p['rank'] == 2:
+                        info['opposing_power'] = p['name']
 
         return info
 

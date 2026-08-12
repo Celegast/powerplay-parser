@@ -33,6 +33,7 @@ Options:
 import os
 import sys
 import re
+import time
 import glob
 import base64
 import argparse
@@ -44,6 +45,12 @@ import cv2
 from summarize_powers import parse_powerplay_file, get_cycle_number
 import config
 import credentials
+
+# Windows consoles default stdout/stderr to cp1252, which can't encode the
+# emoji/arrows used in status messages below — force UTF-8 so prints never crash.
+if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -68,6 +75,12 @@ BAR_TARGET_WIDTH = 368
 
 # Number of systems per POST request — keeps each call well under Apps Script's 6-min limit
 POST_BATCH_SIZE = 10
+
+# Google's Apps Script /exec redirect (script.googleusercontent.com/macros/echo) intermittently
+# 404s or serves a bot-challenge page instead of running the script — a transient Google-side
+# issue, not a deployment problem. Retrying almost always succeeds within a couple of attempts.
+TRANSIENT_RETRIES  = 6
+TRANSIENT_BACKOFF  = 3   # seconds; multiplied by attempt number
 
 
 # ── Capture data loading ───────────────────────────────────────────────────────
@@ -188,10 +201,39 @@ def _parse_response(resp, method):
         sys.exit(1)
 
 
+def _is_transient_failure(resp):
+    """True if this looks like Google's echo-redirect hiccup rather than a real error."""
+    if resp.status_code == 404:
+        return True
+    if "ppConfig" in resp.text[:2000]:   # Google bot-challenge interstitial
+        return True
+    return False
+
+
+def _request_with_retry(method, **kwargs):
+    """requests.request() with retries for the transient Apps Script 404/challenge glitch."""
+    resp = None
+    for attempt in range(1, TRANSIENT_RETRIES + 1):
+        try:
+            resp = requests.request(method, WEB_APP_URL, **kwargs)
+        except requests.exceptions.RequestException:
+            if attempt == TRANSIENT_RETRIES:
+                raise
+            resp = None
+        if resp is not None and not _is_transient_failure(resp):
+            return resp
+        if attempt < TRANSIENT_RETRIES:
+            wait = TRANSIENT_BACKOFF * attempt
+            print(f"  (Google Apps Script hiccup, retrying in {wait}s — "
+                  f"attempt {attempt}/{TRANSIENT_RETRIES}) …")
+            time.sleep(wait)
+    return resp
+
+
 def fetch_system_list(sheet_name):
     """GET the current system list from the Apps Script endpoint."""
     _check_config()
-    resp = requests.get(WEB_APP_URL, params={'token': SECRET_TOKEN, 'sheet': sheet_name}, timeout=30)
+    resp = _request_with_retry('GET', params={'token': SECRET_TOKEN, 'sheet': sheet_name}, timeout=30)
     resp.raise_for_status()
     data = _parse_response(resp, 'GET')
     if 'error' in data:
@@ -210,7 +252,7 @@ def post_updates(systems_payload, sheet_name):
         'sheet':   sheet_name,
         'systems': systems_payload,
     }
-    resp = requests.post(WEB_APP_URL, json=body, timeout=120)
+    resp = _request_with_retry('POST', json=body, timeout=120)
     resp.raise_for_status()
     return _parse_response(resp, 'POST')
 
@@ -228,7 +270,7 @@ def set_sheet_status(message, sheet_name):
     _check_config()
     body = {'token': SECRET_TOKEN, 'sheet': sheet_name, 'set_status': message}
     try:
-        resp = requests.post(WEB_APP_URL, json=body, timeout=15)
+        resp = _request_with_retry('POST', json=body, timeout=15)
         resp.raise_for_status()
     except Exception:
         pass

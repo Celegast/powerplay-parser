@@ -7,6 +7,7 @@ Reads system names from input.txt and automatically captures each one
 # Standard library imports
 import os
 import random
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
@@ -33,6 +34,20 @@ def play_error_sound():
         winsound.Beep(400, 400)  # 400 Hz for 400ms
     except:
         print('\a\a')
+
+def _roman_numeral_suffix(name_upper):
+    """
+    Return the trailing Roman-numeral token of a system name (e.g. 'I', 'II'),
+    or None if the name doesn't end with one.
+
+    Names like 'Hyadum I' / 'Hyadum II' differ only by this suffix and are
+    easily confused by OCR (dropped/added stroke) or fuzzy string matching
+    (they're ~90%+ similar). Extracting it lets matching treat it as a hard
+    constraint instead of just another character in a similarity ratio.
+    """
+    m = re.search(r'\s([IVXLCDM]+)$', name_upper.strip())
+    return m.group(1) if m else None
+
 
 def find_and_click_system_in_dropdown(search_x, search_y, system_name, debug_index=0):
     """
@@ -194,9 +209,20 @@ def find_and_click_system_in_dropdown(search_x, search_y, system_name, debug_ind
         best_ratio = 0.0
         best_index = -1
 
+        target_suffix = _roman_numeral_suffix(system_name_upper)
+
         for i, line in enumerate(lines):
             # Skip very short lines (likely noise)
             if len(line) < 5:
+                continue
+
+            # Names differing only by a Roman-numeral suffix (Hyadum I vs
+            # Hyadum II) score ~90%+ on plain similarity — too close for
+            # fuzzy matching to tell apart reliably. If the target has a
+            # numeral suffix, reject candidates whose own suffix reads
+            # differently, even if their overall similarity is higher.
+            line_suffix = _roman_numeral_suffix(line)
+            if target_suffix and line_suffix and line_suffix != target_suffix:
                 continue
 
             # Calculate similarity ratio

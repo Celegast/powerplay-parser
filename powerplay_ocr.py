@@ -2179,7 +2179,7 @@ class PowerplayOCR:
 
             return True
 
-    def format_for_excel(self, info, original_system_name=None):
+    def format_for_excel(self, info, original_system_name=None, our_power='Pranav Antal'):
         """
         Format parsed data as tab-separated values for Excel
 
@@ -2205,21 +2205,22 @@ class PowerplayOCR:
             # Use original system name if provided, otherwise use OCR'd name
             system_name = original_system_name if original_system_name else info.get('system_name', '')
 
-            # Find 1st and 2nd ranked powers
-            power_1st = None
-            power_2nd = None
+            # Split into our power vs opponent
+            # Our power always goes in the left/reinforcement column regardless of rank
+            our_power_entry = None
+            opponent = None
 
             for p in info['powers']:
-                if p.get('rank') == 1:
-                    power_1st = p
-                elif p.get('rank') == 2:
-                    power_2nd = p
+                if p.get('name', '').strip() == our_power:
+                    our_power_entry = p
+                else:
+                    opponent = p
 
-            # Format: System Name, 1st Power, 2nd Power, (empty), 2nd Score, 1st Score, (empty for Initial CP)
-            power_col = power_1st.get('name', '') if power_1st else ''
-            state_col = power_2nd.get('name', '') if power_2nd else ''
-            undermining_col = str(power_2nd.get('score', '')) if power_2nd else ''
-            reinforcement_col = str(power_1st.get('score', '')) if power_1st else ''
+            # Format: System Name, Our Power, Opponent, (empty), Opponent Score, Our Score, (empty for Initial CP)
+            power_col = our_power_entry.get('name', '') if our_power_entry else (opponent.get('name', '') if opponent else '')
+            state_col = opponent.get('name', '') if opponent else ''
+            undermining_col = str(opponent.get('score', '')) if opponent else ''
+            reinforcement_col = str(our_power_entry.get('score', '')) if our_power_entry else ''
 
             return f"{system_name}\t{power_col}\t{state_col}\t\t{undermining_col}\t{reinforcement_col}\t"
         else:

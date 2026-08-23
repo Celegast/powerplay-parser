@@ -5,6 +5,7 @@ Reads system names from input.txt and automatically captures each one
 """
 
 # Standard library imports
+import concurrent.futures
 import os
 import random
 import re
@@ -480,6 +481,103 @@ def click_and_paste(x, y, text, debug_index=0):
     # Wait for the game to process and display system info
     time.sleep(random.uniform(0.5, 1.0))
 
+
+def _run_ocr_worker(ocr, i, system_name, screenshot_path):
+    """
+    Run the full OCR pipeline for one already-captured screenshot and write its
+    per-index debug files (cropped panel, subsections, OCR text). Safe to call
+    concurrently from multiple threads: every path this touches is keyed by `i`,
+    so no two workers ever write the same file. Tesseract itself is a single-
+    threaded external process, so running many of these in parallel threads lets
+    multiple tesseract processes run at once across CPU cores.
+
+    Deliberately does NOT touch collected_systems, last_data_age, or the shared
+    output files — those are updated afterwards by the caller in original capture
+    order so results stay deterministic regardless of which worker finishes first.
+    """
+    result = {
+        'system_name': system_name,
+        'i': i,
+        'screenshot_path': screenshot_path,
+        'error': None,
+        'info': None,
+        'is_competitive': False,
+        'cropped_path': None,
+        'ocr_text_path': None,
+    }
+
+    try:
+        info = ocr.extract_powerplay_auto(screenshot_path)
+
+        # Detect initial control points from status bar (non-competitive states only)
+        is_competitive = 'powers' in info and info['powers']
+        if not is_competitive:
+            initial_cp = ocr.detect_initial_control_points_from_bar(screenshot_path)
+            info['initial_control_points'] = initial_cp if initial_cp is not None else -1
+        else:
+            info['initial_control_points'] = -1  # Not applicable for competitive states
+
+        # Get raw text for debug
+        text = ocr.extract_text(screenshot_path, preprocess_method='upscale', crop_panel=False, use_subsections=False)
+
+        # Save cropped panel
+        if is_competitive:
+            cropped_img = ocr.crop_powerplay_panel(screenshot_path, extended=True)
+        else:
+            cropped_img = ocr.crop_powerplay_panel(screenshot_path, extended=False)
+        cropped_path = f"auto_capture/debug/cropped/capture_{i:03d}.png"
+        cropped_img.save(cropped_path)
+
+        # Save subsections
+        if is_competitive:
+            subsections = ocr.crop_powerplay_subsections_competitive(screenshot_path)
+        else:
+            subsections = ocr.crop_powerplay_subsections(screenshot_path)
+        for section_name, section_img in subsections.items():
+            subsection_path = f"auto_capture/debug/subsections/capture_{i:03d}_{section_name}.png"
+            section_img.save(subsection_path)
+
+        # Save OCR text
+        ocr_text_path = f"auto_capture/debug/ocr_text/capture_{i:03d}.txt"
+        with open(ocr_text_path, 'w', encoding='utf-8') as f:
+            f.write("=" * 80 + "\n")
+            f.write(f"CAPTURE #{i} - {system_name}\n")
+            f.write("=" * 80 + "\n\n")
+            f.write("RAW OCR TEXT:\n")
+            f.write("-" * 80 + "\n")
+            f.write(text)
+            f.write("\n" + "-" * 80 + "\n\n")
+            f.write("PARSED DATA:\n")
+            f.write(f"  System Name: '{info['system_name']}'\n")
+            f.write(f"  Controlling Power: '{info['controlling_power']}'\n")
+            f.write(f"  Opposing Power: '{info['opposing_power']}'\n")
+            f.write(f"  System Status: '{info['system_status']}'\n")
+            initial_cp = info.get('initial_control_points', -1)
+            if initial_cp >= 0:
+                f.write(f"  Initial Control Points: {initial_cp:,}\n")
+            f.write(f"  Undermining Points: {info['undermining_points']}\n")
+            f.write(f"  Reinforcing Points: {info['reinforcing_points']}\n")
+
+            # Add voting details if available (shows OCR accuracy)
+            if '_undermining_votes' in info:
+                f.write(f"\n  OCR Voting Results (Undermining):\n")
+                f.write(f"    Votes: {info['_undermining_votes']}\n")
+                f.write(f"    Winner: {info['_undermining_winner']}\n")
+            if '_reinforcing_votes' in info:
+                f.write(f"  OCR Voting Results (Reinforcing):\n")
+                f.write(f"    Votes: {info['_reinforcing_votes']}\n")
+                f.write(f"    Winner: {info['_reinforcing_winner']}\n")
+
+        result['info'] = info
+        result['is_competitive'] = is_competitive
+        result['cropped_path'] = cropped_path
+        result['ocr_text_path'] = ocr_text_path
+    except Exception as e:
+        result['error'] = str(e)
+
+    return result
+
+
 def main():
     print("=" * 80)
     print("ELITE DANGEROUS POWERPLAY OCR - AUTOMATED CAPTURE")
@@ -637,79 +735,51 @@ def main():
     collected_systems = {}
     last_data_age = None  # Track data age from most recent screenshot
 
-    # Process each screenshot
-    for system_name, (i, screenshot_path) in screenshot_mapping.items():
+    # Run OCR for every screenshot in parallel. Tesseract is a single-threaded
+    # external process per call, so spreading calls across as many worker threads
+    # as CPU cores lets that many tesseract processes run at once.
+    items = list(screenshot_mapping.items())
+    results = []
+    if items:
+        max_workers = min(len(items), os.cpu_count() or 4)
+        print(f"Running OCR across {max_workers} parallel worker(s) "
+              f"({os.cpu_count() or '?'} CPU core(s) detected)...")
+
+        results = [None] * len(items)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {
+                executor.submit(_run_ocr_worker, ocr, i, system_name, screenshot_path): idx
+                for idx, (system_name, (i, screenshot_path)) in enumerate(items)
+            }
+            done = 0
+            for future in concurrent.futures.as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                results[idx] = future.result()
+                done += 1
+                print(f"  OCR done [{done}/{len(items)}]: {results[idx]['system_name']}")
+
+    # Apply results in original capture order so output files and last_data_age
+    # come out identical to a sequential run, regardless of which worker finished first.
+    for result in results:
+        system_name = result['system_name']
+        i = result['i']
+        screenshot_path = result['screenshot_path']
         print(f"\n[{i}/{len(system_names)}] Processing: {system_name}")
 
+        if result['error']:
+            print(f"  -> [ERROR] {result['error']}")
+            # Keep the original screenshot for debugging errors
+            continue
+
         try:
-            print(f"  -> Running OCR...")
-            info = ocr.extract_powerplay_auto(screenshot_path)
+            info = result['info']
+            is_competitive = result['is_competitive']
+            cropped_path = result['cropped_path']
+            ocr_text_path = result['ocr_text_path']
 
             # Update data_age from each screenshot (keep the last one)
             if info.get('data_age_minutes', -1) >= 0:
                 last_data_age = info['data_age_minutes']
-
-            # Detect initial control points from status bar (non-competitive states only)
-            is_competitive = 'powers' in info and info['powers']
-            if not is_competitive:
-                initial_cp = ocr.detect_initial_control_points_from_bar(screenshot_path)
-                info['initial_control_points'] = initial_cp if initial_cp is not None else -1
-            else:
-                info['initial_control_points'] = -1  # Not applicable for competitive states
-
-            # Get raw text for debug
-            text = ocr.extract_text(screenshot_path, preprocess_method='upscale', crop_panel=False, use_subsections=False)
-
-            # Determine if this is a competitive state
-            is_competitive = 'powers' in info and info['powers']
-
-            # Save cropped panel
-            if is_competitive:
-                cropped_img = ocr.crop_powerplay_panel(screenshot_path, extended=True)
-            else:
-                cropped_img = ocr.crop_powerplay_panel(screenshot_path, extended=False)
-            cropped_path = f"auto_capture/debug/cropped/capture_{i:03d}.png"
-            cropped_img.save(cropped_path)
-
-            # Save subsections
-            if is_competitive:
-                subsections = ocr.crop_powerplay_subsections_competitive(screenshot_path)
-            else:
-                subsections = ocr.crop_powerplay_subsections(screenshot_path)
-            for section_name, section_img in subsections.items():
-                subsection_path = f"auto_capture/debug/subsections/capture_{i:03d}_{section_name}.png"
-                section_img.save(subsection_path)
-
-            # Save OCR text
-            ocr_text_path = f"auto_capture/debug/ocr_text/capture_{i:03d}.txt"
-            with open(ocr_text_path, 'w', encoding='utf-8') as f:
-                f.write("=" * 80 + "\n")
-                f.write(f"CAPTURE #{i} - {system_name}\n")
-                f.write("=" * 80 + "\n\n")
-                f.write("RAW OCR TEXT:\n")
-                f.write("-" * 80 + "\n")
-                f.write(text)
-                f.write("\n" + "-" * 80 + "\n\n")
-                f.write("PARSED DATA:\n")
-                f.write(f"  System Name: '{info['system_name']}'\n")
-                f.write(f"  Controlling Power: '{info['controlling_power']}'\n")
-                f.write(f"  Opposing Power: '{info['opposing_power']}'\n")
-                f.write(f"  System Status: '{info['system_status']}'\n")
-                initial_cp = info.get('initial_control_points', -1)
-                if initial_cp >= 0:
-                    f.write(f"  Initial Control Points: {initial_cp:,}\n")
-                f.write(f"  Undermining Points: {info['undermining_points']}\n")
-                f.write(f"  Reinforcing Points: {info['reinforcing_points']}\n")
-
-                # Add voting details if available (shows OCR accuracy)
-                if '_undermining_votes' in info:
-                    f.write(f"\n  OCR Voting Results (Undermining):\n")
-                    f.write(f"    Votes: {info['_undermining_votes']}\n")
-                    f.write(f"    Winner: {info['_undermining_winner']}\n")
-                if '_reinforcing_votes' in info:
-                    f.write(f"  OCR Voting Results (Reinforcing):\n")
-                    f.write(f"    Votes: {info['_reinforcing_votes']}\n")
-                    f.write(f"    Winner: {info['_reinforcing_winner']}\n")
 
             # Check if valid
             if ocr.is_valid_powerplay_data(info):

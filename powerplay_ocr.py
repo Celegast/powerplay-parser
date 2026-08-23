@@ -8,6 +8,8 @@ import os
 import re
 import shutil
 import sys
+import threading
+import tempfile
 import time
 from datetime import datetime
 
@@ -59,6 +61,14 @@ class PowerplayOCR:
         # Initialize EasyOCR if enabled (lazy loading to save memory)
         self.use_easyocr = use_easyocr
         self._easyocr_reader = None
+        # Guards lazy-init and inference on the shared EasyOCR reader, which is not
+        # safe to call concurrently from multiple threads.
+        self._easyocr_lock = threading.Lock()
+        # Limits simultaneous pytesseract calls. pytesseract's internal NamedTemporaryFile
+        # handling is not safe under high concurrency on Windows — too many concurrent
+        # Tesseract subprocesses cause CRC errors and crashes in the temp PNG files.
+        # 8 is the tuned limit; _run_ocr_worker retries on failure as a safety net.
+        self._tesseract_sem = threading.Semaphore(8)
 
         self.screenshots_dir = "screenshots"
         self.output_dir = "extracted_data"
@@ -66,6 +76,16 @@ class PowerplayOCR:
         # Create directories if they don't exist
         os.makedirs(self.screenshots_dir, exist_ok=True)
         os.makedirs(self.output_dir, exist_ok=True)
+
+    def _run_tesseract(self, image, **kwargs):
+        # Tesseract occasionally wedges under heavy parallel load on Windows
+        # (e.g. AV scanning the freshly-spawned exe) and never returns, which
+        # would otherwise hang the calling thread forever. `timeout` makes
+        # pytesseract kill the subprocess and raise RuntimeError instead, so
+        # the retry loop in _run_ocr_worker can recover.
+        kwargs.setdefault('timeout', 20)
+        with self._tesseract_sem:
+            return pytesseract.image_to_string(image, **kwargs)
 
     def crop_powerplay_panel(self, image_path, extended=False):
         """
@@ -614,7 +634,7 @@ class PowerplayOCR:
         # Additional options for better accuracy:
         # --dpi 300: Tell Tesseract this is high DPI (we upscaled to 3x)
         custom_config = r'--oem 1 --psm 6 --dpi 300'
-        text = pytesseract.image_to_string(image, config=custom_config)
+        text = self._run_tesseract(image, config=custom_config)
 
         return text
 
@@ -638,9 +658,9 @@ class PowerplayOCR:
         for section_name, section_image in subsections.items():
             # Save section to temp file for preprocessing
             import tempfile
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                section_image.save(tmp.name)
-                temp_path = tmp.name
+            _fd, temp_path = tempfile.mkstemp(suffix='.png')
+            os.close(_fd)
+            section_image.save(temp_path)
 
             # Preprocess the subsection
             if preprocess_method != 'none':
@@ -663,7 +683,7 @@ class PowerplayOCR:
                 psm = 6  # Single uniform block
 
             custom_config = f'--oem 1 --psm {psm} --dpi 300'
-            section_text = pytesseract.image_to_string(processed_img, config=custom_config)
+            section_text = self._run_tesseract(processed_img, config=custom_config)
 
             # Add section marker
             combined_text.append(f"[{section_name.upper()}]")
@@ -694,13 +714,14 @@ class PowerplayOCR:
             return ""
 
         # Lazy load EasyOCR reader
-        if self._easyocr_reader is None:
-            try:
-                import easyocr
-                self._easyocr_reader = easyocr.Reader(['en'], gpu=False)
-            except ImportError:
-                print("EasyOCR not installed. Install with: pip install easyocr")
-                return ""
+        with self._easyocr_lock:
+            if self._easyocr_reader is None:
+                try:
+                    import easyocr
+                    self._easyocr_reader = easyocr.Reader(['en'], gpu=False)
+                except ImportError:
+                    print("EasyOCR not installed. Install with: pip install easyocr")
+                    return ""
 
         # Preprocess image
         if preprocess_method != 'none':
@@ -708,15 +729,16 @@ class PowerplayOCR:
 
             # Save preprocessed image to temp file
             import tempfile
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                image.save(tmp.name)
-                temp_path = tmp.name
+            _fd, temp_path = tempfile.mkstemp(suffix='.png')
+            os.close(_fd)
+            image.save(temp_path)
         else:
             temp_path = image_path
 
-        # Run EasyOCR
+        # Run EasyOCR (the reader itself is not safe for concurrent inference calls)
         try:
-            result = self._easyocr_reader.readtext(temp_path)
+            with self._easyocr_lock:
+                result = self._easyocr_reader.readtext(temp_path)
 
             # Extract text from results
             # EasyOCR returns list of (bbox, text, confidence)
@@ -765,16 +787,16 @@ class PowerplayOCR:
 
         # Process system name section - PSM 7 (single line), threshold for text clarity
         if 'system_name' in subsections:
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                tmp_path = tmp.name
-                subsections['system_name'].save(tmp_path)
+            _fd, tmp_path = tempfile.mkstemp(suffix='.png')
+            os.close(_fd)
+            subsections['system_name'].save(tmp_path)
 
             try:
                 # Try multiple methods to get best OCR result
                 candidates = []
 
                 for method in ['none', 'upscale', 'threshold']:
-                    text = pytesseract.image_to_string(
+                    text = self._run_tesseract(
                         self.preprocess_image(tmp_path, method=method, crop_panel=False),
                         config='--oem 3 --psm 7 --dpi 300'
                     ).strip().upper()
@@ -814,12 +836,12 @@ class PowerplayOCR:
 
         # Process status section - look for status keyword in clean text
         if 'system_status' in subsections:
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                tmp_path = tmp.name
-                subsections['system_status'].save(tmp_path)
+            _fd, tmp_path = tempfile.mkstemp(suffix='.png')
+            os.close(_fd)
+            subsections['system_status'].save(tmp_path)
 
             try:
-                text = pytesseract.image_to_string(
+                text = self._run_tesseract(
                     self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
                     config='--oem 3 --psm 6 --dpi 300'
                 ).strip()
@@ -839,12 +861,12 @@ class PowerplayOCR:
 
         # Process controlling power section - PSM 6, upscale for text
         if 'controlling_power' in subsections:
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                tmp_path = tmp.name
-                subsections['controlling_power'].save(tmp_path)
+            _fd, tmp_path = tempfile.mkstemp(suffix='.png')
+            os.close(_fd)
+            subsections['controlling_power'].save(tmp_path)
 
             try:
-                text = pytesseract.image_to_string(
+                text = self._run_tesseract(
                     self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
                     config='--oem 3 --psm 6 --dpi 300'
                 ).upper()
@@ -883,9 +905,9 @@ class PowerplayOCR:
         # Process control points section - both undermining and reinforcing
         # Use majority voting across multiple OCR methods for better accuracy
         if 'control_points' in subsections:
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                tmp_path = tmp.name
-                subsections['control_points'].save(tmp_path)
+            _fd, tmp_path = tempfile.mkstemp(suffix='.png')
+            os.close(_fd)
+            subsections['control_points'].save(tmp_path)
 
             try:
                 # Use Tesseract with 3x upscaling - achieves 100% accuracy
@@ -893,7 +915,7 @@ class PowerplayOCR:
                 reinforcing_votes = []
 
                 for method in ['upscale']:
-                    text_full = pytesseract.image_to_string(
+                    text_full = self._run_tesseract(
                         self.preprocess_image(tmp_path, method=method, crop_panel=False),
                         config='--oem 3 --psm 7 --dpi 300'
                     ).strip()
@@ -952,7 +974,7 @@ class PowerplayOCR:
 
                 # If still no results after voting, try the fallback method with digit whitelist
                 if info['undermining_points'] == -1 or info['reinforcing_points'] == -1:
-                    text = pytesseract.image_to_string(
+                    text = self._run_tesseract(
                         self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
                         config='--oem 3 --psm 7 --dpi 300 -c tessedit_char_whitelist=0123456789, '
                     ).strip()
@@ -990,12 +1012,12 @@ class PowerplayOCR:
 
         # Process data_age section - "X MINUTES AGO"
         if 'data_age' in subsections:
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                tmp_path = tmp.name
-                subsections['data_age'].save(tmp_path)
+            _fd, tmp_path = tempfile.mkstemp(suffix='.png')
+            os.close(_fd)
+            subsections['data_age'].save(tmp_path)
 
             try:
-                text = pytesseract.image_to_string(
+                text = self._run_tesseract(
                     self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
                     config='--oem 3 --psm 7 --dpi 300'
                 ).strip().upper()
@@ -1044,14 +1066,14 @@ class PowerplayOCR:
 
         # Process system name section - same as standard states
         if 'system_name' in subsections:
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                tmp_path = tmp.name
-                subsections['system_name'].save(tmp_path)
+            _fd, tmp_path = tempfile.mkstemp(suffix='.png')
+            os.close(_fd)
+            subsections['system_name'].save(tmp_path)
 
             try:
                 # Try multiple methods to get best OCR result
                 for method in ['none', 'upscale', 'threshold']:
-                    text = pytesseract.image_to_string(
+                    text = self._run_tesseract(
                         self.preprocess_image(tmp_path, method=method, crop_panel=False),
                         config='--oem 3 --psm 7 --dpi 300'
                     ).strip().upper()
@@ -1085,12 +1107,12 @@ class PowerplayOCR:
 
         # Process status section - look for EXPANSION or CONTESTED
         if 'system_status' in subsections:
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                tmp_path = tmp.name
-                subsections['system_status'].save(tmp_path)
+            _fd, tmp_path = tempfile.mkstemp(suffix='.png')
+            os.close(_fd)
+            subsections['system_status'].save(tmp_path)
 
             try:
-                text = pytesseract.image_to_string(
+                text = self._run_tesseract(
                     self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
                     config='--oem 3 --psm 6 --dpi 300'
                 ).strip().upper()
@@ -1129,13 +1151,13 @@ class PowerplayOCR:
         for name_key, score_key, rank in power_sections:
             if name_key in subsections and score_key in subsections:
                 # Extract power name
-                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                    tmp_path = tmp.name
-                    subsections[name_key].save(tmp_path)
+                _fd, tmp_path = tempfile.mkstemp(suffix='.png')
+                os.close(_fd)
+                subsections[name_key].save(tmp_path)
 
                 power_name = ''
                 try:
-                    text = pytesseract.image_to_string(
+                    text = self._run_tesseract(
                         self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
                         config='--oem 3 --psm 6 --dpi 300'
                     ).upper()
@@ -1163,15 +1185,15 @@ class PowerplayOCR:
                         pass
 
                 # Extract control score
-                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                    tmp_path = tmp.name
-                    subsections[score_key].save(tmp_path)
+                _fd, tmp_path = tempfile.mkstemp(suffix='.png')
+                os.close(_fd)
+                subsections[score_key].save(tmp_path)
 
                 control_score = -1
                 try:
                     # Try multiple methods for best accuracy on numbers
                     for method in ['none', 'threshold', 'upscale']:
-                        text = pytesseract.image_to_string(
+                        text = self._run_tesseract(
                             self.preprocess_image(tmp_path, method=method, crop_panel=False),
                             config='--oem 3 --psm 7 --dpi 300'
                         ).strip()
@@ -1208,9 +1230,9 @@ class PowerplayOCR:
 
         # Process your power rank
         if 'power_your_rank' in subsections:
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                tmp_path = tmp.name
-                subsections['power_your_rank'].save(tmp_path)
+            _fd, tmp_path = tempfile.mkstemp(suffix='.png')
+            os.close(_fd)
+            subsections['power_your_rank'].save(tmp_path)
 
             try:
                 # Try multiple PSM modes and preprocessing methods
@@ -1218,7 +1240,7 @@ class PowerplayOCR:
 
                 for psm in [8, 7, 13]:  # PSM 8=single word, 7=single line, 13=raw line
                     for method in ['none', 'threshold', 'upscale']:
-                        text = pytesseract.image_to_string(
+                        text = self._run_tesseract(
                             self.preprocess_image(tmp_path, method=method, crop_panel=False),
                             config=f'--oem 3 --psm {psm} --dpi 300'
                         ).strip().upper()
@@ -1274,12 +1296,12 @@ class PowerplayOCR:
 
         # Process data_age section - "X MINUTES AGO"
         if 'data_age' in subsections:
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                tmp_path = tmp.name
-                subsections['data_age'].save(tmp_path)
+            _fd, tmp_path = tempfile.mkstemp(suffix='.png')
+            os.close(_fd)
+            subsections['data_age'].save(tmp_path)
 
             try:
-                text = pytesseract.image_to_string(
+                text = self._run_tesseract(
                     self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
                     config='--oem 3 --psm 7 --dpi 300'
                 ).strip().upper()
@@ -1302,13 +1324,13 @@ class PowerplayOCR:
 
             # Step 1: Determine actual rank of the top visual section.
             top_power_is_1st = True  # conservative default
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                tmp_path = tmp.name
-                subsections['power_top_rank_badge'].save(tmp_path)
+            _fd, tmp_path = tempfile.mkstemp(suffix='.png')
+            os.close(_fd)
+            subsections['power_top_rank_badge'].save(tmp_path)
             try:
                 for psm in [8, 7, 13]:
                     for method in ['none', 'threshold', 'upscale']:
-                        text = pytesseract.image_to_string(
+                        text = self._run_tesseract(
                             self.preprocess_image(tmp_path, method=method, crop_panel=False),
                             config=f'--oem 3 --psm {psm} --dpi 300'
                         ).strip().upper()
@@ -1347,14 +1369,14 @@ class PowerplayOCR:
             bottom_power_score = -1
 
             if name_key in subsections:
-                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                    tmp_path = tmp.name
-                    subsections[name_key].save(tmp_path)
+                _fd, tmp_path = tempfile.mkstemp(suffix='.png')
+                os.close(_fd)
+                subsections[name_key].save(tmp_path)
                 try:
                     best_match = None
                     best_ratio = 0.7
                     for method in ['upscale', 'threshold', 'none']:
-                        text = pytesseract.image_to_string(
+                        text = self._run_tesseract(
                             self.preprocess_image(tmp_path, method=method, crop_panel=False),
                             config='--oem 3 --psm 7 --dpi 300'
                         ).upper()
@@ -1377,12 +1399,12 @@ class PowerplayOCR:
                         pass
 
             if score_key in subsections:
-                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                    tmp_path = tmp.name
-                    subsections[score_key].save(tmp_path)
+                _fd, tmp_path = tempfile.mkstemp(suffix='.png')
+                os.close(_fd)
+                subsections[score_key].save(tmp_path)
                 try:
                     for method in ['none', 'upscale', 'threshold']:
-                        text = pytesseract.image_to_string(
+                        text = self._run_tesseract(
                             self.preprocess_image(tmp_path, method=method, crop_panel=False),
                             config='--oem 3 --psm 7 --dpi 300'
                         ).strip()
@@ -1480,11 +1502,11 @@ class PowerplayOCR:
             # Quick OCR of status region
             status_pil = Image.fromarray(cv2.cvtColor(status_region, cv2.COLOR_BGR2RGB))
 
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                tmp_path = tmp.name
-                status_pil.save(tmp_path)
+            _fd, tmp_path = tempfile.mkstemp(suffix='.png')
+            os.close(_fd)
+            status_pil.save(tmp_path)
 
-            status_text = pytesseract.image_to_string(
+            status_text = self._run_tesseract(
                 self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
                 config='--oem 3 --psm 6 --dpi 300'
             ).upper()
@@ -1552,13 +1574,13 @@ class PowerplayOCR:
 
             import tempfile
             import os
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                header_section.save(tmp.name)
-                temp_path = tmp.name
+            _fd, temp_path = tempfile.mkstemp(suffix='.png')
+            os.close(_fd)
+            header_section.save(temp_path)
 
             processed = self.preprocess_image(temp_path, method=preprocess_method, crop_panel=False)
             custom_config = r'--oem 1 --psm 6 --dpi 300'
-            header_text = pytesseract.image_to_string(processed, config=custom_config)
+            header_text = self._run_tesseract(processed, config=custom_config)
             header_info = self.parse_powerplay_info(header_text)
 
             if header_info['system_name']:
@@ -1577,14 +1599,14 @@ class PowerplayOCR:
             # Save to temp file for preprocessing
             import tempfile
             import os
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                power_section.save(tmp.name)
-                temp_path = tmp.name
+            _fd, temp_path = tempfile.mkstemp(suffix='.png')
+            os.close(_fd)
+            power_section.save(temp_path)
 
             # Preprocess and OCR with PSM 3 (best for power section)
             processed = self.preprocess_image(temp_path, method=preprocess_method, crop_panel=False)
             custom_config = r'--oem 1 --psm 3 --dpi 300'
-            power_text = pytesseract.image_to_string(processed, config=custom_config)
+            power_text = self._run_tesseract(processed, config=custom_config)
             power_info = self.parse_powerplay_info(power_text)
 
             # Use power names from subsection
@@ -1604,13 +1626,13 @@ class PowerplayOCR:
 
             import tempfile
             import os
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                status_section.save(tmp.name)
-                temp_path = tmp.name
+            _fd, temp_path = tempfile.mkstemp(suffix='.png')
+            os.close(_fd)
+            status_section.save(temp_path)
 
             processed = self.preprocess_image(temp_path, method=preprocess_method, crop_panel=False)
             custom_config = r'--oem 1 --psm 6 --dpi 300'
-            status_text = pytesseract.image_to_string(processed, config=custom_config)
+            status_text = self._run_tesseract(processed, config=custom_config)
             status_info = self.parse_powerplay_info(status_text)
 
             if status_info['system_status']:

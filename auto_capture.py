@@ -506,74 +506,87 @@ def _run_ocr_worker(ocr, i, system_name, screenshot_path):
         'ocr_text_path': None,
     }
 
-    try:
-        info = ocr.extract_powerplay_auto(screenshot_path)
+    _MAX_RETRIES = 3
+    _last_error = None
+    for _attempt in range(_MAX_RETRIES):
+        try:
+            info = ocr.extract_powerplay_auto(screenshot_path)
 
-        # Detect initial control points from status bar (non-competitive states only)
-        is_competitive = 'powers' in info and info['powers']
-        if not is_competitive:
-            initial_cp = ocr.detect_initial_control_points_from_bar(screenshot_path)
-            info['initial_control_points'] = initial_cp if initial_cp is not None else -1
-        else:
-            info['initial_control_points'] = -1  # Not applicable for competitive states
+            # Detect initial control points from status bar (non-competitive states only)
+            is_competitive = 'powers' in info and info['powers']
+            if not is_competitive:
+                initial_cp = ocr.detect_initial_control_points_from_bar(screenshot_path)
+                info['initial_control_points'] = initial_cp if initial_cp is not None else -1
+            else:
+                info['initial_control_points'] = -1  # Not applicable for competitive states
 
-        # Get raw text for debug
-        text = ocr.extract_text(screenshot_path, preprocess_method='upscale', crop_panel=False, use_subsections=False)
+            # Get raw text for debug
+            text = ocr.extract_text(screenshot_path, preprocess_method='upscale', crop_panel=False, use_subsections=False)
 
-        # Save cropped panel
-        if is_competitive:
-            cropped_img = ocr.crop_powerplay_panel(screenshot_path, extended=True)
-        else:
-            cropped_img = ocr.crop_powerplay_panel(screenshot_path, extended=False)
-        cropped_path = f"auto_capture/debug/cropped/capture_{i:03d}.png"
-        cropped_img.save(cropped_path)
+            # Save cropped panel
+            if is_competitive:
+                cropped_img = ocr.crop_powerplay_panel(screenshot_path, extended=True)
+            else:
+                cropped_img = ocr.crop_powerplay_panel(screenshot_path, extended=False)
+            cropped_path = f"auto_capture/debug/cropped/capture_{i:03d}.png"
+            cropped_img.save(cropped_path)
 
-        # Save subsections
-        if is_competitive:
-            subsections = ocr.crop_powerplay_subsections_competitive(screenshot_path)
-        else:
-            subsections = ocr.crop_powerplay_subsections(screenshot_path)
-        for section_name, section_img in subsections.items():
-            subsection_path = f"auto_capture/debug/subsections/capture_{i:03d}_{section_name}.png"
-            section_img.save(subsection_path)
+            # Save subsections
+            if is_competitive:
+                subsections = ocr.crop_powerplay_subsections_competitive(screenshot_path)
+            else:
+                subsections = ocr.crop_powerplay_subsections(screenshot_path)
+            for section_name, section_img in subsections.items():
+                subsection_path = f"auto_capture/debug/subsections/capture_{i:03d}_{section_name}.png"
+                section_img.save(subsection_path)
 
-        # Save OCR text
-        ocr_text_path = f"auto_capture/debug/ocr_text/capture_{i:03d}.txt"
-        with open(ocr_text_path, 'w', encoding='utf-8') as f:
-            f.write("=" * 80 + "\n")
-            f.write(f"CAPTURE #{i} - {system_name}\n")
-            f.write("=" * 80 + "\n\n")
-            f.write("RAW OCR TEXT:\n")
-            f.write("-" * 80 + "\n")
-            f.write(text)
-            f.write("\n" + "-" * 80 + "\n\n")
-            f.write("PARSED DATA:\n")
-            f.write(f"  System Name: '{info['system_name']}'\n")
-            f.write(f"  Controlling Power: '{info['controlling_power']}'\n")
-            f.write(f"  Opposing Power: '{info['opposing_power']}'\n")
-            f.write(f"  System Status: '{info['system_status']}'\n")
-            initial_cp = info.get('initial_control_points', -1)
-            if initial_cp >= 0:
-                f.write(f"  Initial Control Points: {initial_cp:,}\n")
-            f.write(f"  Undermining Points: {info['undermining_points']}\n")
-            f.write(f"  Reinforcing Points: {info['reinforcing_points']}\n")
+            # Save OCR text
+            ocr_text_path = f"auto_capture/debug/ocr_text/capture_{i:03d}.txt"
+            with open(ocr_text_path, 'w', encoding='utf-8') as f:
+                f.write("=" * 80 + "\n")
+                f.write(f"CAPTURE #{i} - {system_name}\n")
+                f.write("=" * 80 + "\n\n")
+                f.write("RAW OCR TEXT:\n")
+                f.write("-" * 80 + "\n")
+                f.write(text)
+                f.write("\n" + "-" * 80 + "\n\n")
+                f.write("PARSED DATA:\n")
+                f.write(f"  System Name: '{info['system_name']}'\n")
+                f.write(f"  Controlling Power: '{info['controlling_power']}'\n")
+                f.write(f"  Opposing Power: '{info['opposing_power']}'\n")
+                f.write(f"  System Status: '{info['system_status']}'\n")
+                initial_cp = info.get('initial_control_points', -1)
+                if initial_cp >= 0:
+                    f.write(f"  Initial Control Points: {initial_cp:,}\n")
+                f.write(f"  Undermining Points: {info['undermining_points']}\n")
+                f.write(f"  Reinforcing Points: {info['reinforcing_points']}\n")
 
-            # Add voting details if available (shows OCR accuracy)
-            if '_undermining_votes' in info:
-                f.write(f"\n  OCR Voting Results (Undermining):\n")
-                f.write(f"    Votes: {info['_undermining_votes']}\n")
-                f.write(f"    Winner: {info['_undermining_winner']}\n")
-            if '_reinforcing_votes' in info:
-                f.write(f"  OCR Voting Results (Reinforcing):\n")
-                f.write(f"    Votes: {info['_reinforcing_votes']}\n")
-                f.write(f"    Winner: {info['_reinforcing_winner']}\n")
+                # Add voting details if available (shows OCR accuracy)
+                if '_undermining_votes' in info:
+                    f.write(f"\n  OCR Voting Results (Undermining):\n")
+                    f.write(f"    Votes: {info['_undermining_votes']}\n")
+                    f.write(f"    Winner: {info['_undermining_winner']}\n")
+                if '_reinforcing_votes' in info:
+                    f.write(f"  OCR Voting Results (Reinforcing):\n")
+                    f.write(f"    Votes: {info['_reinforcing_votes']}\n")
+                    f.write(f"    Winner: {info['_reinforcing_winner']}\n")
 
-        result['info'] = info
-        result['is_competitive'] = is_competitive
-        result['cropped_path'] = cropped_path
-        result['ocr_text_path'] = ocr_text_path
-    except Exception as e:
-        result['error'] = str(e)
+            result['info'] = info
+            result['is_competitive'] = is_competitive
+            result['cropped_path'] = cropped_path
+            result['ocr_text_path'] = ocr_text_path
+            _last_error = None
+            break  # success
+
+        except Exception as e:
+            _last_error = e
+            if _attempt < _MAX_RETRIES - 1:
+                print(f"  [{system_name}] OCR attempt {_attempt + 1}/{_MAX_RETRIES} failed "
+                      f"({e}), retrying...")
+                time.sleep(0.5 * (_attempt + 1))
+
+    if _last_error is not None:
+        result['error'] = str(_last_error)
 
     return result
 
@@ -802,17 +815,15 @@ def main():
                     print(f"     Power: {info['controlling_power'] or info['opposing_power']}")
                     print(f"     CP: {info['undermining_points']} / {info['reinforcing_points']}")
 
-                # Save to collected systems (use input system name as key)
                 collected_systems[system_name] = info
-
-                # Append to both output files (use original system name from input.txt)
                 excel_line = ocr.format_for_excel(info, original_system_name=system_name)
+
                 with open(main_output_file, 'a', encoding='utf-8') as f:
                     f.write(excel_line + '\n')
                 with open(archive_output_file, 'a', encoding='utf-8') as f:
                     f.write(excel_line + '\n')
 
-                print(f"  -> [OK] Data saved!")
+                print(f"  -> [OK] Data saved! ({system_name})")
 
                 # Delete original full screenshot (keep cropped for debug)
                 try:

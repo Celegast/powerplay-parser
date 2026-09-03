@@ -50,6 +50,21 @@ def _roman_numeral_suffix(name_upper):
     return m.group(1) if m else None
 
 
+def _trailing_numeric_token(name_upper):
+    """
+    Return the trailing digit run of a system name (e.g. '2' from
+    '...C1-2', '20' from '...C1-20'), or None if it doesn't end in digits.
+
+    Same failure mode as the Roman-numeral suffix, but with plain numbers:
+    'Pegasi Sector DB-X c1-2' is a literal text prefix of '...c1-20', '...c1-21',
+    etc., so they score extremely high on fuzzy similarity. Extracting the
+    trailing number lets matching require an exact match on it instead of
+    letting a longer/shorter numeric suffix slide through as "close enough".
+    """
+    m = re.search(r'(\d+)$', name_upper.strip())
+    return m.group(1) if m else None
+
+
 def find_and_click_system_in_dropdown(search_x, search_y, system_name, debug_index=0):
     """
     Find the correct system in the dropdown list using OCR and click it
@@ -211,6 +226,7 @@ def find_and_click_system_in_dropdown(search_x, search_y, system_name, debug_ind
         best_index = -1
 
         target_suffix = _roman_numeral_suffix(system_name_upper)
+        target_numeric = _trailing_numeric_token(system_name_upper)
 
         for i, line in enumerate(lines):
             # Skip very short lines (likely noise)
@@ -224,6 +240,14 @@ def find_and_click_system_in_dropdown(search_x, search_y, system_name, debug_ind
             # differently, even if their overall similarity is higher.
             line_suffix = _roman_numeral_suffix(line)
             if target_suffix and line_suffix and line_suffix != target_suffix:
+                continue
+
+            # Same problem with plain numeric suffixes: 'c1-2' is a text
+            # prefix of 'c1-20', 'c1-21', etc., so they're also too close
+            # for fuzzy similarity to tell apart. Require an exact match on
+            # the trailing number when the target has one.
+            line_numeric = _trailing_numeric_token(line)
+            if target_numeric and line_numeric and line_numeric != target_numeric:
                 continue
 
             # Calculate similarity ratio

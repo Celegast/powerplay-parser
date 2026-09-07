@@ -819,9 +819,9 @@ class PowerplayOCR:
                     name = re.sub(r'\bGE-', 'CE-', name)  # GE-N -> CE-N
                     name = re.sub(r'\bGOL\b', 'COL', name)  # GOL -> COL
 
-                    # Valid system name should be at least 3 characters
+                    # Valid system name should be at least 2 characters (e.g. "Ix")
                     # Can have "SECTOR" or be a simple name like "LTT 970"
-                    if len(name) >= 3:
+                    if len(name) >= 2:
                         candidates.append(name)
 
                 # Pick the most common result, or the first valid one
@@ -1095,8 +1095,8 @@ class PowerplayOCR:
                     name = re.sub(r'\bGE-', 'CE-', name)
                     name = re.sub(r'\bGOL\b', 'COL', name)
 
-                    # Valid system name should be at least 3 characters
-                    if len(name) >= 3:
+                    # Valid system name should be at least 2 characters (e.g. "Ix")
+                    if len(name) >= 2:
                         info['system_name'] = name
                         break
             finally:

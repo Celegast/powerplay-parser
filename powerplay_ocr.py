@@ -853,6 +853,19 @@ class PowerplayOCR:
                 status_keywords = ['STRONGHOLD', 'FORTIFIED', 'EXPLOITED', 'UNOCCUPIED']
                 if first_word in status_keywords:
                     info['system_status'] = first_word
+                elif first_word:
+                    # The crop's left edge sits right against the panel border,
+                    # which occasionally clips the leading letter (e.g. "Fortified"
+                    # -> "ortified"), failing an exact match. Fuzzy-match instead —
+                    # a dropped/added character still scores ~0.94 against the
+                    # right keyword, well clear of confusion with the other three.
+                    from difflib import SequenceMatcher
+                    best_kw, best_ratio = max(
+                        ((kw, SequenceMatcher(None, first_word, kw).ratio()) for kw in status_keywords),
+                        key=lambda x: x[1]
+                    )
+                    if best_ratio >= 0.85:
+                        info['system_status'] = best_kw
             finally:
                 try:
                     os.unlink(tmp_path)
@@ -1736,7 +1749,7 @@ class PowerplayOCR:
                     # Extract system name (stops at LAST UPDATED or special chars)
                     # Allow lowercase letters for OCR errors like "De2-16" instead of "DE2-16"
                     system_match = re.match(r'^([A-Za-z0-9][A-Za-z0-9\s\-]+?)(?:\s+LAST\s+UPDATED|[\s=,._]*$)', cleaned_line, re.IGNORECASE)
-                    if system_match and len(system_match.group(1).strip()) > 5:
+                    if system_match and len(system_match.group(1).strip()) >= 2:
                         # Make sure it's not just other text
                         name = system_match.group(1).strip().upper()  # Convert to uppercase
                         if not any(x in name for x in ['DISTANCE', 'MINUTES', 'EXPLOITED', 'FORTIFIED']):

@@ -80,6 +80,9 @@ function doPost(e) {
       return jsonResponse({ok: true});
     }
 
+    // Purge previously trashed bar images from Drive before writing new ones.
+    purgeBarTrash();
+
     var values = sheet.getDataRange().getValues();
 
     // Build lowercase name → 1-based row number map from the current sheet
@@ -109,7 +112,7 @@ function doPost(e) {
       if (sys.bar_b64) {
         try {
           insertBarImage(sheet, rowNum, COL_IMAGE, sys.bar_b64,
-                         sys.bar_width || 0, sys.bar_height || 0);
+                         sys.bar_width || 0, sys.bar_height || 0, sys.name);
         } catch (imgErr) {
           imageErrors.push(sys.name + ': ' + imgErr.message);
         }
@@ -136,7 +139,44 @@ function getSheet(name) {
 // Number of columns the bar image spans (E, F, G = 3)
 var IMAGE_SPAN_COLS = 3;
 
-function insertBarImage(sheet, row, col, base64Data, width, height) {
+// Drive folder used to host bar PNGs (created on first use)
+var BAR_FOLDER_NAME = 'PP_CP_Bar_Cache';
+var _barFolder = null;
+
+function getBarFolder() {
+  if (_barFolder) return _barFolder;
+  var folders = DriveApp.getFoldersByName(BAR_FOLDER_NAME);
+  _barFolder = folders.hasNext() ? folders.next() : DriveApp.createFolder(BAR_FOLDER_NAME);
+  return _barFolder;
+}
+
+function purgeBarTrash() {
+  // Permanently delete all trashed files inside PP_CP_Bar_Cache.
+  // Requires the Drive API advanced service to be enabled in this project:
+  //   Extensions → Services → Drive API (v3)
+  // If it is not enabled the catch below silently skips the purge — trash
+  // just accumulates until manually emptied, but nothing else breaks.
+  try {
+    var folderId = getBarFolder().getId();
+    var pageToken;
+    do {
+      var resp = Drive.Files.list({
+        q: 'trashed = true and "' + folderId + '" in parents',
+        fields: 'nextPageToken, files(id)',
+        pageToken: pageToken
+      });
+      var files = (resp.files || []);
+      for (var i = 0; i < files.length; i++) {
+        Drive.Files.remove(files[i].id);
+      }
+      pageToken = resp.nextPageToken;
+    } while (pageToken);
+  } catch (e) {
+    Logger.log('purgeBarTrash skipped: ' + e.message);
+  }
+}
+
+function insertBarImage(sheet, row, col, base64Data, width, height, systemName) {
   // Remove any old floating images anchored to this row (left over from the
   // previous insertImage() approach). Safe to call repeatedly — no-op once gone.
   var floatingImages = sheet.getImages();
@@ -153,12 +193,26 @@ function insertBarImage(sheet, row, col, base64Data, width, height) {
   // Explicitly clear any existing cell image before writing the new one.
   imageRange.clearContent();
 
-  var dataUrl   = 'data:image/png;base64,' + base64Data;
-  var cellImage = SpreadsheetApp.newCellImage()
-      .setSourceUrl(dataUrl)
-      .setAltTextTitle('CP bar')
-      .build();
-  imageRange.setValue(cellImage);
+  // Google no longer accepts data: URIs in setSourceUrl().
+  // Upload the PNG to Drive and use its public HTTPS URL instead.
+  var folder   = getBarFolder();
+  var safeName = (systemName || ('row_' + row)).replace(/[^A-Za-z0-9_\-]/g, '_');
+  var fileName = 'cpbar_' + safeName + '.png';
+
+  // Trash any stale file with the same name so the new URL is always fresh.
+  var existing = folder.getFilesByName(fileName);
+  while (existing.hasNext()) existing.next().setTrashed(true);
+
+  var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), 'image/png', fileName);
+  var file = folder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+  // CellImageBuilder.build() does an eager server-side HTTP fetch to validate the
+  // URL, which fails for lh3.googleusercontent.com Drive URLs even when they are
+  // publicly shared. =IMAGE() stores a formula reference instead; the browser
+  // fetches it in the viewer's authenticated Google session where it works fine.
+  var imageUrl = 'https://lh3.googleusercontent.com/d/' + file.getId() + '=w400';
+  imageRange.setFormula('=IMAGE("' + imageUrl + '",1)');
 }
 
 function setStatusCell(sheet, message) {

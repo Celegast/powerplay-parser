@@ -22,6 +22,7 @@ python auto_capture.py
 if errorlevel 1 (
     echo.
     echo ERROR in step 2 - aborting.
+    python update_google_sheet.py --clear-status --acquisitions
     pause
     exit /b 1
 )

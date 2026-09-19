@@ -22,6 +22,7 @@ Typical workflow:
 Options:
   -c, --capture FILE   Capture file to read (default: powerplay_auto_capture.txt)
   --sync-input         Write the sheet's current system list to input.txt, then exit
+  --clear-status       Clear the "update in progress" indicator cell, then exit
   --images-only        Upload CP bar images only; do not write UM, RF, or timestamp
   --no-images          Skip CP bar image updates (data only)
   --system SYSTEM      Only update the one system whose name contains SYSTEM (case-insensitive)
@@ -418,17 +419,22 @@ def update_sheet(system_map, data_timestamp, sheet_name, update_images=True,
     all_not_found = []
     all_image_errors = []
 
-    for batch_num, batch in enumerate(batches, 1):
-        print(f"  Batch {batch_num}/{len(batches)} ({len(batch)} systems) …", end=' ', flush=True)
-        result = post_updates(batch, sheet_name)
-        if 'error' in result:
-            print(f"ERROR: {result['error']}")
-        else:
-            n = result.get('updated', 0)
-            total_updated += n
-            print(f"ok ({n} updated)")
-            all_not_found.extend(result.get('notFound') or [])
-            all_image_errors.extend(result.get('imageErrors') or [])
+    try:
+        for batch_num, batch in enumerate(batches, 1):
+            print(f"  Batch {batch_num}/{len(batches)} ({len(batch)} systems) …", end=' ', flush=True)
+            result = post_updates(batch, sheet_name)
+            if 'error' in result:
+                print(f"ERROR: {result['error']}")
+            else:
+                n = result.get('updated', 0)
+                total_updated += n
+                print(f"ok ({n} updated)")
+                all_not_found.extend(result.get('notFound') or [])
+                all_image_errors.extend(result.get('imageErrors') or [])
+    finally:
+        # Never leave the sheet showing "update in progress" after a failed upload
+        print("Clearing update indicator …")
+        set_sheet_status("", sheet_name)
 
     print(f"\nSheet updated: {total_updated} systems total")
     if all_not_found:
@@ -437,9 +443,6 @@ def update_sheet(system_map, data_timestamp, sheet_name, update_images=True,
         print(f"Image errors:")
         for e in all_image_errors:
             print(f"  {e}")
-
-    print("Clearing update indicator …")
-    set_sheet_status("", sheet_name)
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
@@ -457,6 +460,11 @@ def main():
         '--sync-input',
         action='store_true',
         help='Write the sheet\'s current system list to input.txt, then exit'
+    )
+    parser.add_argument(
+        '--clear-status',
+        action='store_true',
+        help='Clear the "update in progress" indicator cell, then exit'
     )
     parser.add_argument(
         '--images-only',
@@ -505,6 +513,11 @@ def main():
 
     if args.sync_input:
         sync_input_txt(sheet_name)
+        return
+
+    if args.clear_status:
+        print(f"Clearing update indicator in '{sheet_name}' …")
+        set_sheet_status("", sheet_name)
         return
 
     system_map     = {}

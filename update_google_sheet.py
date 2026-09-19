@@ -230,8 +230,12 @@ def _request_with_retry(method, **kwargs):
     return resp
 
 
-def fetch_system_list(sheet_name):
-    """GET the current system list from the Apps Script endpoint."""
+def fetch_system_list(sheet_name, with_values=False):
+    """GET the current system list from the Apps Script endpoint.
+
+    With with_values=True returns (systems, current) where current maps
+    lowercase name → {'um': ..., 'rf': ...} as stored in the sheet right now.
+    """
     _check_config()
     resp = _request_with_retry('GET', params={'token': SECRET_TOKEN, 'sheet': sheet_name}, timeout=30)
     resp.raise_for_status()
@@ -241,6 +245,8 @@ def fetch_system_list(sheet_name):
     systems = data['systems']
     # Honour the ---END marker that separates active systems from the rest of the sheet
     end = next((i for i, s in enumerate(systems) if s.strip() == '---END'), len(systems))
+    if with_values:
+        return systems[:end], data.get('current') or {}
     return systems[:end]
 
 
@@ -298,6 +304,14 @@ def sync_input_txt(sheet_name, input_file='input.txt'):
 
 # ── Main update logic ──────────────────────────────────────────────────────────
 
+def _same_value(sheet_val, new_val):
+    """True if the sheet's current cell value equals the freshly captured int."""
+    try:
+        return int(sheet_val) == int(new_val)
+    except (TypeError, ValueError):
+        return False   # empty cell / non-numeric → treat as changed
+
+
 def update_sheet(system_map, data_timestamp, sheet_name, update_images=True,
                  images_only=False, system_filter=None, dry_run=False):
     # Format timestamp as ISO 8601 so Apps Script can parse it as a Date object,
@@ -313,7 +327,7 @@ def update_sheet(system_map, data_timestamp, sheet_name, update_images=True,
 
     # Fetch system list from the sheet (sheet is source of truth)
     print(f"Fetching system list from '{sheet_name}' …")
-    sheet_systems = fetch_system_list(sheet_name)
+    sheet_systems, sheet_current = fetch_system_list(sheet_name, with_values=True)
 
     # Filter to a single system if requested
     if system_filter:
@@ -334,9 +348,11 @@ def update_sheet(system_map, data_timestamp, sheet_name, update_images=True,
     # Build the payload
     payload   = []
     unmatched = []
+    skipped   = 0
 
     for system_name in sheet_systems:
         entry = {'name': system_name}
+        unchanged = False
 
         if not images_only:
             sys_data = system_map.get(system_name.lower())
@@ -347,7 +363,14 @@ def update_sheet(system_map, data_timestamp, sheet_name, update_images=True,
             entry['um']        = sys_data['undermining_raw']
             entry['rf']        = sys_data['reinforcement']
 
-        if update_images or images_only:
+            # No RF/UM activity since the last upload → only bump the
+            # "last checked" timestamp; skip values and the (slow) image upload.
+            old = sheet_current.get(system_name.lower())
+            if old and _same_value(old.get('um'), entry['um']) and _same_value(old.get('rf'), entry['rf']):
+                unchanged = True
+                skipped += 1
+
+        if (update_images or images_only) and not unchanged:
             cap_idx = capture_index_map.get(system_name.lower())
             if cap_idx is not None:
                 cropped_path = f'auto_capture/debug/cropped/capture_{cap_idx:03d}.png'
@@ -367,11 +390,15 @@ def update_sheet(system_map, data_timestamp, sheet_name, update_images=True,
         else:
             print(f"  {tag} {system_name[:45]:<45} "
                   f"UM={entry['um']:>8,}  RF={entry['rf']:>8,}"
-                  + ("  [+img]" if has_img else ""))
+                  + ("  [+img]" if has_img else "")
+                  + ("  (unchanged, timestamp only)" if unchanged else ""))
+            if unchanged:
+                del entry['um'], entry['rf']
 
     print()
     if not images_only:
-        print(f"Matched: {len(payload)} / {len(sheet_systems)}")
+        print(f"Matched: {len(payload)} / {len(sheet_systems)}"
+              + (f"  ({skipped} unchanged, timestamp only)" if skipped else ''))
         if unmatched:
             print(f"Not in capture ({len(unmatched)}): {', '.join(unmatched[:5])}"
                   + (f' … +{len(unmatched) - 5}' if len(unmatched) > 5 else ''))

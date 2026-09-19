@@ -15,6 +15,7 @@
  *
  * The script exposes two endpoints:
  *   GET  ?token=...&sheet=...            → returns current system list (for --sync-input)
+ *                                          plus current UM/RF per system (for change detection)
  *   POST (JSON body, systems=[...])      → updates UM, RF, timestamp, and CP bar images
  *   POST (JSON body, set_status="...")   → writes/clears the update-status indicator cell
  */
@@ -47,12 +48,16 @@ function doGet(e) {
 
   var values = sheet.getDataRange().getValues();
   var systems = [];
+  var current = {};   // lowercase name → {um, rf} as currently stored in the sheet
   for (var i = 1; i < values.length; i++) {   // skip header row
     var name = String(values[i][COL_SYSTEM - 1]).trim();
-    if (name) systems.push(name);
+    if (name) {
+      systems.push(name);
+      current[name.toLowerCase()] = {um: values[i][COL_UM - 1], rf: values[i][COL_RF - 1]};
+    }
   }
 
-  return jsonResponse({systems: systems});
+  return jsonResponse({systems: systems, current: current});
 }
 
 
@@ -80,8 +85,9 @@ function doPost(e) {
       return jsonResponse({ok: true});
     }
 
-    // Purge previously trashed bar images from Drive before writing new ones.
-    purgeBarTrash();
+    // Purge previously trashed bar images from Drive before writing new ones
+    // (skipped for timestamp-only batches — no Drive work needed).
+    if (payload.systems.some(function (s) { return !!s.bar_b64; })) purgeBarTrash();
 
     var values = sheet.getDataRange().getValues();
 

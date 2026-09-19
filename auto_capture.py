@@ -434,33 +434,40 @@ _WRITE_VK_OVERRIDES = config.WRITE_VK_OVERRIDES
 
 def _write_text(text, interval=0.02):
     """
-    Type text using pyautogui.write(). If the text contains characters that
-    pyautogui mistypes (see _WRITE_VK_OVERRIDES), those are handled one at a
-    time via keybd_event; surrounding plain segments are written in one call.
+    Type text one character at a time via keybd_event, asking the active
+    Windows keyboard layout (VkKeyScanW) which key + modifiers produce it.
+
+    pyautogui.write() can't be used for this: its isShiftCharacter() hardcodes
+    the US shift symbols, so on a German layout '+' (an unshifted key there)
+    gets Shift added and comes out as '*' — "BD+00 3840" became "BD*00 3840".
+    _WRITE_VK_OVERRIDES still wins for the physical-keyboard-≠-Windows-layout
+    case, which no lookup can detect.
     """
-    if not any(ch in _WRITE_VK_OVERRIDES for ch in text):
-        pyautogui.write(text, interval=interval)
-        return
-
     import ctypes
+    user32 = ctypes.windll.user32
+    user32.VkKeyScanW.restype = ctypes.c_short
     KEYEVENTF_KEYUP = 0x0002
-    keybd = ctypes.windll.user32.keybd_event
+    MODIFIER_VKS = ((1, 0x10), (2, 0x11), (4, 0x12))   # VkKeyScanW high-byte bit → VK_SHIFT/CONTROL/MENU
 
-    segment = []
     for ch in text:
         if ch in _WRITE_VK_OVERRIDES:
-            if segment:
-                pyautogui.write(''.join(segment), interval=interval)
-                segment = []
-            vk = _WRITE_VK_OVERRIDES[ch]
-            keybd(vk, 0, 0, 0)
-            time.sleep(interval)
-            keybd(vk, 0, KEYEVENTF_KEYUP, 0)
-            time.sleep(interval)
+            mods, vk = 0, _WRITE_VK_OVERRIDES[ch]
         else:
-            segment.append(ch)
-    if segment:
-        pyautogui.write(''.join(segment), interval=interval)
+            scan = user32.VkKeyScanW(ord(ch))
+            if scan == -1:
+                pyautogui.write(ch, interval=interval)   # not on this layout; let pyautogui try
+                continue
+            mods, vk = divmod(scan & 0xFFFF, 0x100)
+
+        held = [mvk for bit, mvk in MODIFIER_VKS if mods & bit]
+        for mvk in held:
+            user32.keybd_event(mvk, 0, 0, 0)
+        user32.keybd_event(vk, 0, 0, 0)
+        time.sleep(interval)
+        user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
+        for mvk in reversed(held):
+            user32.keybd_event(mvk, 0, KEYEVENTF_KEYUP, 0)
+        time.sleep(interval)
 
 
 def click_and_paste(x, y, text, debug_index=0):
@@ -821,6 +828,14 @@ def main():
             # Check if valid
             if ocr.is_valid_powerplay_data(info):
                 parsed_name = info['system_name']
+
+                # If the search failed (mistyped name, no dropdown hit) the panel still
+                # shows the PREVIOUS system, and we'd silently file its numbers under
+                # this name. Correct captures score >=0.96 here, a stale panel ~0.1.
+                if SequenceMatcher(None, system_name.upper(), parsed_name.upper()).ratio() < 0.6:
+                    print(f"  -> [ERROR] Panel shows '{parsed_name}', not '{system_name}' — "
+                          f"search probably failed; skipping (screenshot kept)")
+                    continue
 
                 print(f"  -> Parsed:")
                 print(f"     System: {parsed_name}")

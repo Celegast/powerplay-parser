@@ -118,13 +118,16 @@ def parse_powerplay_file(filepath):
         elif len(numeric_parts) == 2:
             # Contested system: state column holds the contesting power name
             # and initial CP is absent (system has been depleted to 0).
+            # A standard system also lands here when bar detection failed to
+            # read its Initial CP — keep its real state in that case.
             try:
                 undermining = int(numeric_parts[0].replace(',', ''))
                 reinforcement = int(numeric_parts[1].replace(',', ''))
                 initial_cp = 0
             except ValueError:
                 continue
-            state = 'CONTESTED'
+            if state not in ('EXPLOITED', 'FORTIFIED', 'STRONGHOLD'):
+                state = 'CONTESTED'
         elif len(numeric_parts) == 1:
             # Uncontested UNOCCUPIED: only our power is present; the single value
             # is the control score from bar detection (sits in the Initial CP column).

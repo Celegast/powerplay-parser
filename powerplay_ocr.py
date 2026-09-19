@@ -758,13 +758,15 @@ class PowerplayOCR:
             print(f"EasyOCR error: {e}")
             return ""
 
-    def extract_powerplay_subsections_optimized(self, image_path):
+    def extract_powerplay_subsections_optimized(self, image_path, status_text=None):
         """
         Extract powerplay data using exact subsection coordinates with optimized OCR per section
         This is the most accurate method - processes each UI element independently
 
         Args:
             image_path: Path to screenshot (full or already cropped panel)
+            status_text: OCR text of the status region if the caller already has it
+                         (extract_powerplay_auto peeks at it) — skips a Tesseract pass
 
         Returns:
             Dictionary with extracted powerplay information
@@ -793,8 +795,6 @@ class PowerplayOCR:
 
             try:
                 # Try multiple methods to get best OCR result
-                candidates = []
-
                 for method in ['none', 'upscale', 'threshold']:
                     text = self._run_tesseract(
                         self.preprocess_image(tmp_path, method=method, crop_panel=False),
@@ -822,12 +822,8 @@ class PowerplayOCR:
                     # Valid system name should be at least 2 characters (e.g. "Ix")
                     # Can have "SECTOR" or be a simple name like "LTT 970"
                     if len(name) >= 2:
-                        candidates.append(name)
-
-                # Pick the most common result, or the first valid one
-                if candidates:
-                    # Use the first candidate from 'none' or 'upscale' if available
-                    info['system_name'] = candidates[0]
+                        info['system_name'] = name
+                        break   # first valid result wins; further passes were never used
             finally:
                 try:
                     os.unlink(tmp_path)
@@ -835,42 +831,43 @@ class PowerplayOCR:
                     pass
 
         # Process status section - look for status keyword in clean text
-        if 'system_status' in subsections:
+        if status_text is None and 'system_status' in subsections:
             _fd, tmp_path = tempfile.mkstemp(suffix='.png')
             os.close(_fd)
             subsections['system_status'].save(tmp_path)
 
             try:
-                text = self._run_tesseract(
+                status_text = self._run_tesseract(
                     self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
                     config='--oem 3 --psm 6 --dpi 300'
-                ).strip()
-
-                # Extract first word from description text
-                # "Exploited systems have..." -> "EXPLOITED"
-                first_word = text.split()[0].upper() if text else ''
-
-                status_keywords = ['STRONGHOLD', 'FORTIFIED', 'EXPLOITED', 'UNOCCUPIED']
-                if first_word in status_keywords:
-                    info['system_status'] = first_word
-                elif first_word:
-                    # The crop's left edge sits right against the panel border,
-                    # which occasionally clips the leading letter (e.g. "Fortified"
-                    # -> "ortified"), failing an exact match. Fuzzy-match instead —
-                    # a dropped/added character still scores ~0.94 against the
-                    # right keyword, well clear of confusion with the other three.
-                    from difflib import SequenceMatcher
-                    best_kw, best_ratio = max(
-                        ((kw, SequenceMatcher(None, first_word, kw).ratio()) for kw in status_keywords),
-                        key=lambda x: x[1]
-                    )
-                    if best_ratio >= 0.85:
-                        info['system_status'] = best_kw
+                )
             finally:
                 try:
                     os.unlink(tmp_path)
                 except:
                     pass
+
+        if status_text and status_text.strip():
+            # Extract first word from description text
+            # "Exploited systems have..." -> "EXPLOITED"
+            first_word = status_text.split()[0].upper()
+
+            status_keywords = ['STRONGHOLD', 'FORTIFIED', 'EXPLOITED', 'UNOCCUPIED']
+            if first_word in status_keywords:
+                info['system_status'] = first_word
+            else:
+                # The crop's left edge sits right against the panel border,
+                # which occasionally clips the leading letter (e.g. "Fortified"
+                # -> "ortified"), failing an exact match. Fuzzy-match instead —
+                # a dropped/added character still scores ~0.94 against the
+                # right keyword, well clear of confusion with the other three.
+                from difflib import SequenceMatcher
+                best_kw, best_ratio = max(
+                    ((kw, SequenceMatcher(None, first_word, kw).ratio()) for kw in status_keywords),
+                    key=lambda x: x[1]
+                )
+                if best_ratio >= 0.85:
+                    info['system_status'] = best_kw
 
         # Process controlling power section - PSM 6, upscale for text
         if 'controlling_power' in subsections:
@@ -1047,13 +1044,15 @@ class PowerplayOCR:
 
         return info
 
-    def extract_powerplay_competitive(self, image_path):
+    def extract_powerplay_competitive(self, image_path, status_text=None):
         """
         Extract powerplay data for EXPANSION/CONTESTED states using subsection coordinates
         These states have a different layout with multiple competing powers
 
         Args:
             image_path: Path to screenshot (full or already cropped extended panel)
+            status_text: OCR text of the status region if the caller already has it
+                         (extract_powerplay_auto peeks at it) — skips a Tesseract pass
 
         Returns:
             Dictionary with extracted powerplay information including multiple powers
@@ -1119,32 +1118,34 @@ class PowerplayOCR:
                     pass
 
         # Process status section - look for EXPANSION or CONTESTED
-        if 'system_status' in subsections:
+        if status_text is None and 'system_status' in subsections:
             _fd, tmp_path = tempfile.mkstemp(suffix='.png')
             os.close(_fd)
             subsections['system_status'].save(tmp_path)
 
             try:
-                text = self._run_tesseract(
+                status_text = self._run_tesseract(
                     self.preprocess_image(tmp_path, method='upscale', crop_panel=False),
                     config='--oem 3 --psm 6 --dpi 300'
-                ).strip().upper()
-
-                # Check for competitive state keywords
-                # CONTESTED: "Contested systems have multiple Powers actively competing"
-                # EXPANSION: Systems being expanded into (may show in description)
-                # UNOCCUPIED: "Unoccupied systems have not been expanded into by any Power"
-                if 'CONTESTED' in text:
-                    info['system_status'] = 'CONTESTED'
-                elif 'EXPANSION' in text:
-                    info['system_status'] = 'EXPANSION'
-                elif 'UNOCCUPIED' in text:
-                    info['system_status'] = 'UNOCCUPIED'
+                )
             finally:
                 try:
                     os.unlink(tmp_path)
                 except:
                     pass
+
+        if status_text:
+            text = status_text.strip().upper()
+            # Check for competitive state keywords
+            # CONTESTED: "Contested systems have multiple Powers actively competing"
+            # EXPANSION: Systems being expanded into (may show in description)
+            # UNOCCUPIED: "Unoccupied systems have not been expanded into by any Power"
+            if 'CONTESTED' in text:
+                info['system_status'] = 'CONTESTED'
+            elif 'EXPANSION' in text:
+                info['system_status'] = 'EXPANSION'
+            elif 'UNOCCUPIED' in text:
+                info['system_status'] = 'UNOCCUPIED'
 
         # Process power sections - 1st, 2nd, and Your power
         power_sections = [
@@ -1504,13 +1505,18 @@ class PowerplayOCR:
 
                 status_region = img[top:bottom, left:right]
             else:
-                # Already cropped panel - get status region
-                if height < 700:
-                    # Standard panel dimensions
-                    status_region = img[212:280, 14:424]
+                # Already cropped panel - get status region, scaled from the
+                # reference panel size (same as crop_powerplay_subsections*).
+                if height < width:
+                    # Standard panel (740x646 ref) is wider than tall; extended (742x840) is taller
+                    sx = width / config.PANEL_WIDTH_STANDARD
+                    sy = height / config.PANEL_HEIGHT_STANDARD
+                    status_region = img[int(212 * sy):int(280 * sy), int(14 * sx):int(424 * sx)]
                 else:
                     # Extended panel dimensions
-                    status_region = img[212:272, 14:734]
+                    sx = width / config.PANEL_WIDTH_EXTENDED
+                    sy = height / config.PANEL_HEIGHT_EXTENDED
+                    status_region = img[int(212 * sy):int(272 * sy), int(14 * sx):int(734 * sx)]
 
             # Quick OCR of status region
             status_pil = Image.fromarray(cv2.cvtColor(status_region, cv2.COLOR_BGR2RGB))
@@ -1532,10 +1538,13 @@ class PowerplayOCR:
             # Detect competitive state keywords
             is_competitive = any(kw in status_text for kw in ['CONTESTED', 'EXPANSION', 'UNOCCUPIED'])
 
+            # Hand the peeked text down so the extractor doesn't OCR the same region again
+            # (an empty peek is passed as None so the extractor falls back to its own OCR)
+            status_text = status_text if status_text.strip() else None
             if is_competitive:
-                return self.extract_powerplay_competitive(image_path)
+                return self.extract_powerplay_competitive(image_path, status_text=status_text)
             else:
-                return self.extract_powerplay_subsections_optimized(image_path)
+                return self.extract_powerplay_subsections_optimized(image_path, status_text=status_text)
 
         except Exception as e:
             # Fallback: Try standard first, then competitive

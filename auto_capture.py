@@ -544,9 +544,6 @@ def _run_ocr_worker(ocr, i, system_name, screenshot_path):
             else:
                 info['initial_control_points'] = -1  # Not applicable for competitive states
 
-            # Get raw text for debug
-            text = ocr.extract_text(screenshot_path, preprocess_method='upscale', crop_panel=False, use_subsections=False)
-
             # Save cropped panel
             if is_competitive:
                 cropped_img = ocr.crop_powerplay_panel(screenshot_path, extended=True)
@@ -570,10 +567,6 @@ def _run_ocr_worker(ocr, i, system_name, screenshot_path):
                 f.write("=" * 80 + "\n")
                 f.write(f"CAPTURE #{i} - {system_name}\n")
                 f.write("=" * 80 + "\n\n")
-                f.write("RAW OCR TEXT:\n")
-                f.write("-" * 80 + "\n")
-                f.write(text)
-                f.write("\n" + "-" * 80 + "\n\n")
                 f.write("PARSED DATA:\n")
                 f.write(f"  System Name: '{info['system_name']}'\n")
                 f.write(f"  Controlling Power: '{info['controlling_power']}'\n")

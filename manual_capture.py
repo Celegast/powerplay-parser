@@ -85,9 +85,6 @@ if __name__ == "__main__":
             # Extract and parse using auto-detection (handles all state types)
             info = ocr.extract_powerplay_auto(screenshot_path)
 
-            # Also get raw text for debug output
-            text = ocr.extract_text(screenshot_path, preprocess_method='upscale', crop_panel=False, use_subsections=False)
-
             # Determine if this is a competitive state
             is_competitive = 'powers' in info and info['powers']
 
@@ -114,10 +111,6 @@ if __name__ == "__main__":
                 f.write("=" * 80 + "\n")
                 f.write(f"CAPTURE #{capture_count}\n")
                 f.write("=" * 80 + "\n\n")
-                f.write("RAW OCR TEXT:\n")
-                f.write("-" * 80 + "\n")
-                f.write(text)
-                f.write("\n" + "-" * 80 + "\n\n")
                 f.write("PARSED DATA:\n")
                 f.write(f"  System Name: '{info['system_name']}'\n")
                 f.write(f"  Controlling Power: '{info['controlling_power']}'\n")

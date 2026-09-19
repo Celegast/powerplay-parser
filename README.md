@@ -251,7 +251,7 @@ update_prio_sheet.bat
 Runs three steps in sequence:
 1. **Fetch system list** — reads col B of the `This Cycle N` sheet and writes it to `input.txt`
 2. **In-game capture** — launches `auto_capture.py`; switch to Elite Dangerous when prompted
-3. **Upload** — pushes UM, RF, timestamp, and CP-bar images in batches of 10 to avoid Apps Script timeouts
+3. **Upload** — pushes UM, RF, timestamp, and CP-bar images in batches of 10 to avoid Apps Script timeouts. Systems whose UM and RF match what the sheet already holds only get their timestamp refreshed ("last checked") — values and images are not re-sent, which keeps the upload fast when little has changed.
 
 During steps 2 and 3, cell A1 of the sheet shows **⏳ Update in progress…** (yellow) so team members can see that an update is underway. It is cleared automatically when the upload completes. The status cell row/column can be changed via `STATUS_ROW`/`STATUS_COL` in `antal_priorities_updater.gs`.
 

@@ -657,7 +657,6 @@ class PowerplayOCR:
 
         for section_name, section_image in subsections.items():
             # Save section to temp file for preprocessing
-            import tempfile
             _fd, temp_path = tempfile.mkstemp(suffix='.png')
             os.close(_fd)
             section_image.save(temp_path)
@@ -690,7 +689,6 @@ class PowerplayOCR:
             combined_text.append(section_text.strip())
 
             # Clean up temp file
-            import os
             try:
                 os.remove(temp_path)
             except:

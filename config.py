@@ -58,9 +58,9 @@ SEARCH_FIELD_Y = 168
 
 # Keyboard character overrides for auto_capture typing.
 #
-# pyautogui.write() looks up each character via VkKeyScan(), which uses the
-# *active Windows keyboard layout*. This works correctly when the Windows layout
-# matches the physical keyboard (US, UK, French, Australian, etc.).
+# auto_capture asks the *active Windows keyboard layout* (VkKeyScanW) which key
+# and modifiers produce each character, so any layout that matches the physical
+# keyboard (US, UK, German, French, ...) works without configuration.
 #
 # Only add entries here if your Windows layout does NOT match your physical
 # keyboard and specific characters are typed incorrectly. Each entry maps a

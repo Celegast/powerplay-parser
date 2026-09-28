@@ -37,6 +37,7 @@ import time
 import glob
 import base64
 import argparse
+import concurrent.futures
 from datetime import datetime, timezone
 
 import requests
@@ -75,6 +76,11 @@ BAR_TARGET_WIDTH = 368
 
 # Number of systems per POST request — keeps each call well under Apps Script's 6-min limit
 POST_BATCH_SIZE = 10
+
+# Batches touch disjoint sets of sheet rows, so they're safe to send concurrently. Apps Script
+# Web Apps allow well over this many simultaneous executions per user, so this is capped modestly
+# just to avoid hammering the deployment with every batch at once on large updates.
+UPLOAD_CONCURRENCY = 4
 
 # Google's Apps Script /exec redirect (script.googleusercontent.com/macros/echo) intermittently
 # 404s or serves a bot-challenge page instead of running the script — a transient Google-side
@@ -412,21 +418,38 @@ def update_sheet(system_map, data_timestamp, sheet_name, update_images=True,
         return
 
     batches = [payload[i:i + POST_BATCH_SIZE] for i in range(0, len(payload), POST_BATCH_SIZE)]
-    print(f"\nSending updates to Google Sheet in {len(batches)} batch(es) of ≤{POST_BATCH_SIZE} …")
+    max_workers = min(len(batches), UPLOAD_CONCURRENCY)
+    print(f"\nSending updates to Google Sheet in {len(batches)} batch(es) of ≤{POST_BATCH_SIZE} "
+          f"across {max_workers} parallel worker(s) …")
 
     total_updated = 0
     all_not_found = []
     all_image_errors = []
 
-    for batch_num, batch in enumerate(batches, 1):
-        print(f"  Batch {batch_num}/{len(batches)} ({len(batch)} systems) …", end=' ', flush=True)
-        result = post_updates(batch, sheet_name)
-        if 'error' in result:
-            print(f"ERROR: {result['error']}")
-        else:
-            n = result.get('updated', 0)
-            total_updated += n
-            print(f"ok ({n} updated)")
+    results = [None] * len(batches)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_idx = {
+            executor.submit(post_updates, batch, sheet_name): idx
+            for idx, batch in enumerate(batches)
+        }
+        done = 0
+        for future in concurrent.futures.as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            batch_num = idx + 1
+            result = future.result()
+            results[idx] = result
+            done += 1
+            if 'error' in result:
+                print(f"  Batch {batch_num}/{len(batches)}: ERROR: {result['error']}  [{done}/{len(batches)} done]")
+            else:
+                n = result.get('updated', 0)
+                print(f"  Batch {batch_num}/{len(batches)}: ok ({n} updated)  [{done}/{len(batches)} done]")
+
+    # Aggregate in original batch order so summary output is deterministic
+    # regardless of which batch finished first.
+    for result in results:
+        if 'error' not in result:
+            total_updated += result.get('updated', 0)
             all_not_found.extend(result.get('notFound') or [])
             all_image_errors.extend(result.get('imageErrors') or [])
 

@@ -792,7 +792,13 @@ def main():
     print("PHASE 1: CAPTURING SCREENSHOTS")
     print("=" * 80)
 
-    screenshot_mapping = {}  # Maps system_name -> screenshot_path
+    # OCR each screenshot in the background as soon as it's saved instead of after
+    # the last one. Capturing a system takes ~7 s and OCR ~2.5 s per panel, so
+    # usually only one tesseract process competes with the game at a time; any
+    # backlog left at the end gets the whole pool.
+    max_workers = os.cpu_count() or 4
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+    ocr_futures = {}  # system_name -> Future of _run_ocr_worker's result
 
     for i, system_name in enumerate(system_names, 1):
         print(f"\n[{i}/{len(system_names)}] Capturing: {system_name}")
@@ -818,7 +824,8 @@ def main():
                 # Save the full screenshot with system name
                 saved_path = f"auto_capture/screenshots/capture_{i:03d}_{safe_name}.png"
                 shutil.move(screenshot_path, saved_path)
-                screenshot_mapping[system_name] = (i, saved_path)
+                ocr_futures[system_name] = executor.submit(
+                    _run_ocr_worker, ocr, i, system_name, saved_path, debug_ocr)
 
                 print(f"  -> [OK] Screenshot saved!")
             else:
@@ -832,7 +839,7 @@ def main():
             time.sleep(0.5)
 
     print("\n" + "=" * 80)
-    print(f"PHASE 1 COMPLETE - CAPTURED {len(screenshot_mapping)}/{len(system_names)} SCREENSHOTS")
+    print(f"PHASE 1 COMPLETE - CAPTURED {len(ocr_futures)}/{len(system_names)} SCREENSHOTS")
     print("=" * 80)
 
     # Play sound to indicate phase transition
@@ -862,28 +869,15 @@ def main():
     collected_systems = {}
     last_data_age = None  # Track data age from most recent screenshot
 
-    # Run OCR for every screenshot in parallel. Tesseract is a single-threaded
-    # external process per call, so spreading calls across as many worker threads
-    # as CPU cores lets that many tesseract processes run at once.
-    items = list(screenshot_mapping.items())
+    # OCR was started during capture; most of it is already done. Collect in capture order.
+    finished = sum(f.done() for f in ocr_futures.values())
+    print(f"{finished}/{len(ocr_futures)} already finished during capture, finishing the rest "
+          f"across up to {max_workers} parallel worker(s)...")
     results = []
-    if items:
-        max_workers = min(len(items), os.cpu_count() or 4)
-        print(f"Running OCR across {max_workers} parallel worker(s) "
-              f"({os.cpu_count() or '?'} CPU core(s) detected)...")
-
-        results = [None] * len(items)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_idx = {
-                executor.submit(_run_ocr_worker, ocr, i, system_name, screenshot_path, debug_ocr): idx
-                for idx, (system_name, (i, screenshot_path)) in enumerate(items)
-            }
-            done = 0
-            for future in concurrent.futures.as_completed(future_to_idx):
-                idx = future_to_idx[future]
-                results[idx] = future.result()
-                done += 1
-                print(f"  OCR done [{done}/{len(items)}]: {results[idx]['system_name']}")
+    for done, (system_name, future) in enumerate(ocr_futures.items(), 1):
+        results.append(future.result())
+        print(f"  OCR done [{done}/{len(ocr_futures)}]: {system_name}")
+    executor.shutdown()
 
     # Apply results in original capture order so output files and last_data_age
     # come out identical to a sequential run, regardless of which worker finished first.

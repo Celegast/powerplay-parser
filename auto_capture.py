@@ -5,6 +5,7 @@ Reads system names from input.txt and automatically captures each one
 """
 
 # Standard library imports
+import argparse
 import concurrent.futures
 import os
 import random
@@ -513,7 +514,7 @@ def click_and_paste(x, y, text, debug_index=0):
     time.sleep(random.uniform(0.5, 1.0))
 
 
-def _run_ocr_worker(ocr, i, system_name, screenshot_path):
+def _run_ocr_worker(ocr, i, system_name, screenshot_path, debug_ocr_text=False):
     """
     Run the full OCR pipeline for one already-captured screenshot and write its
     per-index debug files (cropped panel, subsections, OCR text). Safe to call
@@ -525,6 +526,11 @@ def _run_ocr_worker(ocr, i, system_name, screenshot_path):
     Deliberately does NOT touch collected_systems, last_data_age, or the shared
     output files — those are updated afterwards by the caller in original capture
     order so results stay deterministic regardless of which worker finishes first.
+
+    debug_ocr_text=False (default) skips the extra full-panel tesseract pass used
+    only to populate the "RAW OCR TEXT" section of the debug dump — extract_powerplay_auto
+    already does its own field-level OCR, so that pass roughly doubles OCR time per
+    screenshot. Pass --debug-ocr on the command line to capture it when troubleshooting.
     """
     result = {
         'system_name': system_name,
@@ -551,6 +557,12 @@ def _run_ocr_worker(ocr, i, system_name, screenshot_path):
             else:
                 info['initial_control_points'] = -1  # Not applicable for competitive states
 
+            # Get raw text for debug (extra full-panel tesseract pass — opt in with --debug-ocr)
+            text = (
+                ocr.extract_text(screenshot_path, preprocess_method='upscale', crop_panel=False, use_subsections=False)
+                if debug_ocr_text else None
+            )
+
             # Save cropped panel
             if is_competitive:
                 cropped_img = ocr.crop_powerplay_panel(screenshot_path, extended=True)
@@ -574,6 +586,10 @@ def _run_ocr_worker(ocr, i, system_name, screenshot_path):
                 f.write("=" * 80 + "\n")
                 f.write(f"CAPTURE #{i} - {system_name}\n")
                 f.write("=" * 80 + "\n\n")
+                f.write("RAW OCR TEXT:\n")
+                f.write("-" * 80 + "\n")
+                f.write(text if text is not None else "(skipped — pass --debug-ocr to capture raw OCR text)")
+                f.write("\n" + "-" * 80 + "\n\n")
                 f.write("PARSED DATA:\n")
                 f.write(f"  System Name: '{info['system_name']}'\n")
                 f.write(f"  Controlling Power: '{info['controlling_power']}'\n")
@@ -616,6 +632,16 @@ def _run_ocr_worker(ocr, i, system_name, screenshot_path):
 
 
 def main():
+    parser = argparse.ArgumentParser(description='Automated Powerplay screenshot capture + OCR')
+    parser.add_argument(
+        '--debug-ocr',
+        action='store_true',
+        help='Capture the raw full-panel OCR text dump (an extra tesseract pass per '
+             'screenshot, roughly doubling OCR time). Off by default; enable when '
+             'troubleshooting misreads.'
+    )
+    args = parser.parse_args()
+
     print("=" * 80)
     print("ELITE DANGEROUS POWERPLAY OCR - AUTOMATED CAPTURE")
     print("=" * 80)
@@ -785,7 +811,7 @@ def main():
         results = [None] * len(items)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_idx = {
-                executor.submit(_run_ocr_worker, ocr, i, system_name, screenshot_path): idx
+                executor.submit(_run_ocr_worker, ocr, i, system_name, screenshot_path, args.debug_ocr): idx
                 for idx, (system_name, (i, screenshot_path)) in enumerate(items)
             }
             done = 0

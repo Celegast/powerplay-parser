@@ -6,6 +6,7 @@ Press ESC to exit
 """
 
 # Standard library imports
+import argparse
 import os
 import time
 
@@ -31,6 +32,16 @@ def play_error_sound():
         print('\a\a')  # Fallback to double beep
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Manual Powerplay capture (F9 hotkey)')
+    parser.add_argument(
+        '--debug-ocr',
+        action='store_true',
+        help='Capture the raw full-panel OCR text dump (an extra tesseract pass per '
+             'capture, roughly doubling OCR time). Off by default; enable when '
+             'troubleshooting misreads.'
+    )
+    args = parser.parse_args()
+
     print("=" * 80)
     print("ELITE DANGEROUS POWERPLAY OCR - LIVE DEMO")
     print("=" * 80)
@@ -85,6 +96,12 @@ if __name__ == "__main__":
             # Extract and parse using auto-detection (handles all state types)
             info = ocr.extract_powerplay_auto(screenshot_path)
 
+            # Raw text for debug (extra full-panel tesseract pass — opt in with --debug-ocr)
+            text = (
+                ocr.extract_text(screenshot_path, preprocess_method='upscale', crop_panel=False, use_subsections=False)
+                if args.debug_ocr else None
+            )
+
             # Determine if this is a competitive state
             is_competitive = 'powers' in info and info['powers']
 
@@ -111,6 +128,10 @@ if __name__ == "__main__":
                 f.write("=" * 80 + "\n")
                 f.write(f"CAPTURE #{capture_count}\n")
                 f.write("=" * 80 + "\n\n")
+                f.write("RAW OCR TEXT:\n")
+                f.write("-" * 80 + "\n")
+                f.write(text if text is not None else "(skipped — pass --debug-ocr to capture raw OCR text)")
+                f.write("\n" + "-" * 80 + "\n\n")
                 f.write("PARSED DATA:\n")
                 f.write(f"  System Name: '{info['system_name']}'\n")
                 f.write(f"  Controlling Power: '{info['controlling_power']}'\n")

@@ -22,6 +22,7 @@ import winsound
 # Local imports
 from powerplay_ocr import PowerplayOCR
 import config
+import credentials
 
 def play_success_sound():
     """Play a success sound (high beep)"""
@@ -638,9 +639,19 @@ def main():
         action='store_true',
         help='Capture the raw full-panel OCR text dump (an extra tesseract pass per '
              'screenshot, roughly doubling OCR time). Off by default; enable when '
-             'troubleshooting misreads.'
+             'troubleshooting misreads. Also enabled by setting DEBUG_OCR = True '
+             'in credentials.py.'
+    )
+    parser.add_argument(
+        '--debug-pause',
+        action='store_true',
+        help='Pause for a keypress before exiting, so the console stays visible when '
+             'launched from a script. Off by default; enable when troubleshooting. '
+             'Also enabled by setting DEBUG_PAUSE = True in credentials.py.'
     )
     args = parser.parse_args()
+    debug_ocr = args.debug_ocr or getattr(credentials, 'DEBUG_OCR', False)
+    debug_pause = args.debug_pause or getattr(credentials, 'DEBUG_PAUSE', False)
 
     print("=" * 80)
     print("ELITE DANGEROUS POWERPLAY OCR - AUTOMATED CAPTURE")
@@ -811,7 +822,7 @@ def main():
         results = [None] * len(items)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_idx = {
-                executor.submit(_run_ocr_worker, ocr, i, system_name, screenshot_path, args.debug_ocr): idx
+                executor.submit(_run_ocr_worker, ocr, i, system_name, screenshot_path, debug_ocr): idx
                 for idx, (system_name, (i, screenshot_path)) in enumerate(items)
             }
             done = 0
@@ -1064,6 +1075,9 @@ def main():
     play_success_sound()
     time.sleep(0.3)
     play_success_sound()
+
+    if debug_pause:
+        input("\nPress Enter to continue...")
 
 if __name__ == "__main__":
     main()

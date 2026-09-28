@@ -498,7 +498,15 @@ def main():
         action='store_true',
         help='Shorthand for --sheet Acquisitions --no-images'
     )
+    parser.add_argument(
+        '--debug-pause',
+        action='store_true',
+        help='Pause for a keypress after the upload finishes, so the console stays visible '
+             'when launched from a script. Off by default; enable when troubleshooting. '
+             'Also enabled by setting DEBUG_PAUSE = True in credentials.py.'
+    )
     args = parser.parse_args()
+    debug_pause = args.debug_pause or getattr(credentials, 'DEBUG_PAUSE', False)
 
     # Resolve target sheet name
     if args.acquisitions:
@@ -541,6 +549,9 @@ def main():
         system_filter=args.system,
         dry_run=args.dry_run,
     )
+
+    if debug_pause:
+        input("\nPress Enter to continue...")
 
 
 if __name__ == '__main__':

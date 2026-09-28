@@ -233,6 +233,15 @@ FIREBASE_DB_KEY = 'your-firebase-db-key'
 
 `credentials.py` is never committed — it stays local to your machine.
 
+Two optional debug flags default to `False` and can also be set in `credentials.py`:
+
+```python
+DEBUG_OCR   = False   # capture the raw full-panel OCR text dump (extra tesseract pass)
+DEBUG_PAUSE = False   # pause after in-game capture and after upload, for manual inspection
+```
+
+Each has a matching command-line override (`--debug-ocr`, `--debug-pause`) that force-enables it for a single run regardless of what's in `credentials.py`.
+
 The sheet tab name (`"This Cycle 78"`, `"This Cycle 79"`, …) is derived automatically from the current cycle number — no changes needed each week.
 
 ### Running the updater

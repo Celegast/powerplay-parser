@@ -16,6 +16,7 @@ import winsound
 
 # Local imports
 from powerplay_ocr import PowerplayOCR
+import credentials
 
 def play_success_sound():
     """Play a success sound (high beep)"""
@@ -41,6 +42,7 @@ if __name__ == "__main__":
              'troubleshooting misreads.'
     )
     args = parser.parse_args()
+    debug_ocr = args.debug_ocr or getattr(credentials, 'DEBUG_OCR', False)
 
     print("=" * 80)
     print("ELITE DANGEROUS POWERPLAY OCR - LIVE DEMO")
@@ -99,7 +101,7 @@ if __name__ == "__main__":
             # Raw text for debug (extra full-panel tesseract pass — opt in with --debug-ocr)
             text = (
                 ocr.extract_text(screenshot_path, preprocess_method='upscale', crop_panel=False, use_subsections=False)
-                if args.debug_ocr else None
+                if debug_ocr else None
             )
 
             # Determine if this is a competitive state

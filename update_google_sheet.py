@@ -29,6 +29,7 @@ Options:
   --dry-run            Print what would change without modifying the sheet
   --sheet SHEET        Target a specific sheet tab by exact name (default: "This Cycle N")
   --acquisitions       Shorthand for --sheet Acquisitions --no-images
+  --all                "This Cycle N" and Acquisitions together (sync, clear-status, upload)
 """
 
 import os
@@ -291,17 +292,21 @@ def set_sheet_status(message, sheet_name):
 
 # ── Sync input.txt from sheet ─────────────────────────────────────────────────
 
-def sync_input_txt(sheet_name, input_file='input.txt'):
+def sync_input_txt(sheet_names, input_file='input.txt'):
     """
-    Read the current system list from the Google Sheet and write it to input.txt
-    so that auto_capture.py captures exactly the systems the sheet tracks.
+    Read the current system list from each Google Sheet and write them to input.txt
+    so that auto_capture.py captures exactly the systems the sheets track.
     """
-    print(f"Setting update indicator in '{sheet_name}' …")
-    set_sheet_status("⏳ Update in progress…", sheet_name)
+    systems = []
+    for sheet_name in sheet_names:
+        print(f"Setting update indicator in '{sheet_name}' …")
+        set_sheet_status("⏳ Update in progress…", sheet_name)
 
-    print(f"Fetching system list from '{sheet_name}' …")
-    systems = fetch_system_list(sheet_name)
-    print(f"  {len(systems)} systems")
+        print(f"Fetching system list from '{sheet_name}' …")
+        sheet_systems = fetch_system_list(sheet_name)
+        print(f"  {len(sheet_systems)} systems")
+        systems += sheet_systems
+    systems = list(dict.fromkeys(systems))   # a system on both sheets is captured once
     with open(input_file, 'w', encoding='utf-8') as f:
         for name in systems:
             f.write(name + '\n')
@@ -522,6 +527,13 @@ def main():
         help='Shorthand for --sheet Acquisitions --no-images'
     )
     parser.add_argument(
+        '--all',
+        action='store_true',
+        help='"This Cycle N" and Acquisitions together (overrides --sheet/--acquisitions): '
+             '--sync-input writes both system lists, --clear-status clears both, '
+             'and an upload updates both sheets from the same capture file'
+    )
+    parser.add_argument(
         '--debug-pause',
         action='store_true',
         help='Pause for a keypress after the upload finishes, so the console stays visible '
@@ -539,16 +551,20 @@ def main():
     else:
         sheet_name = DEFAULT_SHEET_NAME
 
-    # Acquisitions sheet never has CP bar images
-    no_images = args.no_images or args.acquisitions
+    # (sheet, update_images) pairs; the Acquisitions sheet never has CP bar images
+    if args.all:
+        targets = [(DEFAULT_SHEET_NAME, not args.no_images), (ACQUISITIONS_SHEET, False)]
+    else:
+        targets = [(sheet_name, not (args.no_images or args.acquisitions))]
 
     if args.sync_input:
-        sync_input_txt(sheet_name)
+        sync_input_txt([s for s, _ in targets])
         return
 
     if args.clear_status:
-        print(f"Clearing update indicator in '{sheet_name}' …")
-        set_sheet_status("", sheet_name)
+        for s, _ in targets:
+            print(f"Clearing update indicator in '{s}' …")
+            set_sheet_status("", s)
         return
 
     system_map     = {}
@@ -563,15 +579,18 @@ def main():
               + (f", timestamp: {data_timestamp}" if data_timestamp else ''))
         print()
 
-    update_sheet(
-        system_map,
-        data_timestamp,
-        sheet_name=sheet_name,
-        update_images=not no_images,
-        images_only=args.images_only,
-        system_filter=args.system,
-        dry_run=args.dry_run,
-    )
+    for n, (s, update_images) in enumerate(targets):
+        if n:
+            print("\n" + "=" * 60 + "\n")
+        update_sheet(
+            system_map,
+            data_timestamp,
+            sheet_name=s,
+            update_images=update_images,
+            images_only=args.images_only,
+            system_filter=args.system,
+            dry_run=args.dry_run,
+        )
 
     if debug_pause:
         input("\nPress Enter to continue...")

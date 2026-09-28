@@ -351,12 +351,6 @@ class PowerplayOCR:
         - power_2nd_score: (416, 464) - (738, 494)
         - power_your_name: (106, 692) - (412, 722)   EXPANSION/CONTESTED your section
         - power_your_score: (416, 692) - (738, 722)
-        - power_your_rank: (108, 646) - (170, 674)
-        - power_top_rank_badge: (40, 281) - (160, 318)         rank badge of top section
-        - power_bottom_name_early: (106, 445) - (412, 495)  bottom name, 1st-at-top layout
-        - power_bottom_score_early: (416, 445) - (738, 495)
-        - power_bottom_name_late: (106, 525) - (412, 575)   bottom name, 2nd-at-top layout
-        - power_bottom_score_late: (416, 525) - (738, 575)
 
         Args:
             image_path: Path to the image file (can be full screenshot or extended cropped panel)
@@ -444,59 +438,12 @@ class PowerplayOCR:
                 'bottom': int(722 * height_scale),
                 'description': 'Your power control score'
             },
-            'power_your_rank': {
-                'left': int(108 * width_scale),
-                'top': int(646 * height_scale),
-                'right': int(170 * width_scale),
-                'bottom': int(674 * height_scale),
-                'description': 'Your power rank (1st, 2nd, 3rd)'
-            },
             'data_age': {
                 'left': int(500 * width_scale),
                 'top': int(105 * height_scale),
                 'right': int(736 * width_scale),
                 'bottom': int(134 * height_scale),
                 'description': 'Data age (X MINUTES AGO)'
-            },
-            # UNOCCUPIED competitive panels: the two powers can appear in either order.
-            # "early" crops target the 2nd-place power when 1st-place is at the top
-            # (bottom power directly below top power's bar, ~y=445-495).
-            # "late" crops target the 1st-place power when 2nd-place is at the top
-            # (bottom power below the threshold-label gap, ~y=525-575).
-            'power_top_rank_badge': {
-                'left': int(40 * width_scale),
-                'top': int(281 * height_scale),
-                'right': int(160 * width_scale),
-                'bottom': int(318 * height_scale),
-                'description': 'Rank badge ("1st"/"2nd") of the top visual power section'
-            },
-            'power_bottom_name_early': {
-                'left': int(106 * width_scale),
-                'top': int(445 * height_scale),
-                'right': int(412 * width_scale),
-                'bottom': int(495 * height_scale),
-                'description': 'Bottom power name — 1st-at-top layout (2nd power ~y=460)'
-            },
-            'power_bottom_score_early': {
-                'left': int(416 * width_scale),
-                'top': int(445 * height_scale),
-                'right': int(738 * width_scale),
-                'bottom': int(495 * height_scale),
-                'description': 'Bottom power score — 1st-at-top layout'
-            },
-            'power_bottom_name_late': {
-                'left': int(106 * width_scale),
-                'top': int(525 * height_scale),
-                'right': int(412 * width_scale),
-                'bottom': int(575 * height_scale),
-                'description': 'Bottom power name — 2nd-at-top layout (1st power ~y=540)'
-            },
-            'power_bottom_score_late': {
-                'left': int(416 * width_scale),
-                'top': int(525 * height_scale),
-                'right': int(738 * width_scale),
-                'bottom': int(575 * height_scale),
-                'description': 'Bottom power score — 2nd-at-top layout'
             }
         }
 
@@ -1068,7 +1015,6 @@ class PowerplayOCR:
             'controlling_power': '',  # Will be the 1st ranked power
             'opposing_power': '',     # Will be the 2nd ranked power
             'your_power': '',
-            'your_rank': '',
             'undermining_points': -1,  # Not applicable for competitive states
             'reinforcing_points': -1,  # Not applicable for competitive states
             'data_age_minutes': -1
@@ -1149,7 +1095,7 @@ class PowerplayOCR:
         power_sections = [
             ('power_1st_name', 'power_1st_score', 1),
             ('power_2nd_name', 'power_2nd_score', 2),
-            ('power_your_name', 'power_your_score', None)  # Rank determined separately
+            ('power_your_name', 'power_your_score', None)  # only shown when our power is 3rd or lower
         ]
 
         # Known power names for fuzzy matching
@@ -1196,6 +1142,9 @@ class PowerplayOCR:
                     except:
                         pass
 
+                if not power_name:
+                    continue   # empty slot, e.g. no "Your power" row
+
                 # Extract control score
                 _fd, tmp_path = tempfile.mkstemp(suffix='.png')
                 os.close(_fd)
@@ -1209,6 +1158,8 @@ class PowerplayOCR:
                             self.preprocess_image(tmp_path, method=method, crop_panel=False),
                             config='--oem 3 --psm 7 --dpi 300'
                         ).strip()
+                        # A score of exactly 0 comes back as the letter: "CONTROL SCORE O"
+                        text = re.sub(r'\bO\b', '0', text)
 
                         # Extract number (with or without commas)
                         number_match = re.search(r'(\d{1,}(?:,\d{3})*)', text)
@@ -1240,72 +1191,6 @@ class PowerplayOCR:
                         'rank': rank
                     })
 
-        # Process your power rank
-        if 'power_your_rank' in subsections:
-            _fd, tmp_path = tempfile.mkstemp(suffix='.png')
-            os.close(_fd)
-            subsections['power_your_rank'].save(tmp_path)
-
-            try:
-                # Try multiple PSM modes and preprocessing methods
-                best_rank = ''
-
-                for psm in [8, 7, 13]:  # PSM 8=single word, 7=single line, 13=raw line
-                    for method in ['none', 'threshold', 'upscale']:
-                        text = self._run_tesseract(
-                            self.preprocess_image(tmp_path, method=method, crop_panel=False),
-                            config=f'--oem 3 --psm {psm} --dpi 300'
-                        ).strip().upper()
-
-                        # Look for rank indicators: 1ST, 2ND, 3RD, 4TH, 5TH, etc.
-                        rank_match = re.search(r'(\d+)(ST|ND|RD|TH)', text)
-                        if rank_match:
-                            rank_num = rank_match.group(1)
-                            rank_suffix = rank_match.group(2).lower()
-                            best_rank = f"{rank_num}{rank_suffix}"
-                            break
-
-                        # Check for common OCR errors: "Sth" or "oth" for "5th"
-                        if text in ['STH', 'OTH', 'STI']:
-                            best_rank = '5th'
-                            break
-                        elif text in ['1ST', 'IST']:
-                            best_rank = '1st'
-                            break
-                        elif text in ['2ND']:
-                            best_rank = '2nd'
-                            break
-                        elif text in ['3RD']:
-                            best_rank = '3rd'
-                            break
-                        elif text in ['4TH']:
-                            best_rank = '4th'
-                            break
-
-                        # Fallback: just a digit
-                        digit_match = re.search(r'\b([1-9])\b', text)
-                        if digit_match:
-                            digit = digit_match.group(1)
-                            if digit == '1':
-                                best_rank = '1st'
-                            elif digit == '2':
-                                best_rank = '2nd'
-                            elif digit == '3':
-                                best_rank = '3rd'
-                            else:
-                                best_rank = f"{digit}th"
-                            break
-
-                    if best_rank:
-                        break
-
-                info['your_rank'] = best_rank
-            finally:
-                try:
-                    os.unlink(tmp_path)
-                except:
-                    pass
-
         # Process data_age section - "X MINUTES AGO"
         if 'data_age' in subsections:
             _fd, tmp_path = tempfile.mkstemp(suffix='.png')
@@ -1327,135 +1212,6 @@ class PowerplayOCR:
                     os.unlink(tmp_path)
                 except:
                     pass
-
-        # UNOCCUPIED competitive: the two powers can be displayed in either visual order.
-        # Use the rank badge of the top section to determine actual ranks, then read the
-        # bottom power from a wide crop that covers both possible vertical positions.
-        if (info.get('system_status') == 'UNOCCUPIED'
-                and 'power_top_rank_badge' in subsections):
-
-            # Step 1: Determine actual rank of the top visual section.
-            top_power_is_1st = True  # conservative default
-            _fd, tmp_path = tempfile.mkstemp(suffix='.png')
-            os.close(_fd)
-            subsections['power_top_rank_badge'].save(tmp_path)
-            try:
-                for psm in [8, 7, 13]:
-                    for method in ['none', 'threshold', 'upscale']:
-                        text = self._run_tesseract(
-                            self.preprocess_image(tmp_path, method=method, crop_panel=False),
-                            config=f'--oem 3 --psm {psm} --dpi 300'
-                        ).strip().upper()
-                        rank_match = re.search(r'(\d+)\s*(?:ST|ND|RD|TH)', text)
-                        if rank_match:
-                            top_power_is_1st = (int(rank_match.group(1)) == 1)
-                            break
-                        # Fallbacks for partial OCR (e.g. "2N" when "d" is clipped)
-                        if re.search(r'\b2\b', text) or 'ND' in text or re.match(r'^2', text.strip()):
-                            top_power_is_1st = False
-                            break
-                        if re.search(r'\b1\b', text) or 'ST' in text or re.match(r'^1', text.strip()):
-                            top_power_is_1st = True
-                            break
-                    else:
-                        continue
-                    break
-            finally:
-                try:
-                    os.unlink(tmp_path)
-                except:
-                    pass
-
-            # Step 2: Get the top power info already parsed (assigned rank=1 by the earlier loop).
-            top_power_info = next((p for p in info['powers'] if p.get('rank') == 1), None)
-
-            # Step 3: Read the bottom visual section.
-            # The bottom power's vertical position depends on layout:
-            #   "early" (y≈445-495): used when 1st is at top — 2nd power sits right below top bar
-            #   "late"  (y≈525-575): used when 2nd is at top — 1st power is below threshold labels
-            name_key = 'power_bottom_name_early' if top_power_is_1st else 'power_bottom_name_late'
-            score_key = 'power_bottom_score_early' if top_power_is_1st else 'power_bottom_score_late'
-
-            from difflib import SequenceMatcher
-            bottom_power_name = ''
-            bottom_power_score = -1
-
-            if name_key in subsections:
-                _fd, tmp_path = tempfile.mkstemp(suffix='.png')
-                os.close(_fd)
-                subsections[name_key].save(tmp_path)
-                try:
-                    best_match = None
-                    best_ratio = 0.7
-                    for method in ['upscale', 'threshold', 'none']:
-                        text = self._run_tesseract(
-                            self.preprocess_image(tmp_path, method=method, crop_panel=False),
-                            config='--oem 3 --psm 7 --dpi 300'
-                        ).upper()
-                        for power in power_names:
-                            if power in text:
-                                best_match = power
-                                break
-                            ratio = SequenceMatcher(None, text.replace('\n', ' '), power).ratio()
-                            if ratio > best_ratio:
-                                best_ratio = ratio
-                                best_match = power
-                        if best_match:
-                            break
-                    if best_match:
-                        bottom_power_name = best_match.title()
-                finally:
-                    try:
-                        os.unlink(tmp_path)
-                    except:
-                        pass
-
-            if score_key in subsections:
-                _fd, tmp_path = tempfile.mkstemp(suffix='.png')
-                os.close(_fd)
-                subsections[score_key].save(tmp_path)
-                try:
-                    for method in ['none', 'upscale', 'threshold']:
-                        text = self._run_tesseract(
-                            self.preprocess_image(tmp_path, method=method, crop_panel=False),
-                            config='--oem 3 --psm 7 --dpi 300'
-                        ).strip()
-                        number_match = re.search(r'(\d{1,}(?:,\d{3})*)', text)
-                        if number_match:
-                            try:
-                                bottom_power_score = int(number_match.group(1).replace(',', ''))
-                                break
-                            except ValueError:
-                                pass
-                finally:
-                    try:
-                        os.unlink(tmp_path)
-                    except:
-                        pass
-
-            # Step 4: Rebuild powers list with correct rank assignments.
-            if top_power_info or bottom_power_name:
-                info['powers'] = []
-                if top_power_info:
-                    top_actual_rank = 1 if top_power_is_1st else 2
-                    info['powers'].append({
-                        'name': top_power_info['name'],
-                        'score': top_power_info['score'],
-                        'rank': top_actual_rank
-                    })
-                if bottom_power_name:
-                    bottom_actual_rank = 2 if top_power_is_1st else 1
-                    info['powers'].append({
-                        'name': bottom_power_name,
-                        'score': max(bottom_power_score, 0),
-                        'rank': bottom_actual_rank
-                    })
-                # Sync convenience fields
-                for p in info['powers']:
-                    if p['rank'] == 1:
-                        info['controlling_power'] = p['name']
-                    elif p['rank'] == 2:
-                        info['opposing_power'] = p['name']
 
         return info
 
@@ -2228,10 +1984,10 @@ class PowerplayOCR:
         Handles both standard and competitive states:
         - Standard states: Power, State, Undermining, Reinforcement, Initial CP as normal
         - Competitive states:
-          * Power = 1st power name
-          * State = 2nd power name
-          * Undermining = 2nd power control points
-          * Reinforcement = 1st power control points
+          * Power = our power (falls back to the opponent if ours isn't listed)
+          * State = opponent: the other power with the highest control score
+          * Undermining = opponent control score
+          * Reinforcement = our power's control score
           * Initial CP = (empty - not applicable)
 
         Args:
@@ -2248,14 +2004,15 @@ class PowerplayOCR:
             system_name = original_system_name if original_system_name else info.get('system_name', '')
 
             # Split into our power vs opponent
-            # Our power always goes in the left/reinforcement column regardless of rank
+            # Our power always goes in the left/reinforcement column regardless of rank.
+            # Opponent = strongest other power: the highest control score wins the system.
             our_power_entry = None
             opponent = None
 
             for p in info['powers']:
                 if p.get('name', '').strip() == our_power:
                     our_power_entry = p
-                else:
+                elif opponent is None or p.get('score', -1) > opponent.get('score', -1):
                     opponent = p
 
             # Format: System Name, Our Power, Opponent, (empty), Opponent Score, Our Score, (empty for Initial CP)

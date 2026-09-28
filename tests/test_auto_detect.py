@@ -50,7 +50,7 @@ def main():
                     rank_str = f"{power_data['rank']}" if power_data['rank'] else "?"
                     print(f"    {rank_str}. {power_data['name']}: {power_data['score']:,}")
                 if info.get('your_power'):
-                    print(f"  Your Power: {info['your_power']} (Rank: {info['your_rank']})")
+                    print(f"  Your Power: {info['your_power']}")
             else:
                 print(f"\n  STATE TYPE: STANDARD")
                 print(f"  Undermining: {info['undermining_points']:,}")

@@ -25,7 +25,8 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
-pause
+rem Uncomment the line below when debugging to pause between capture and upload
+rem pause
 
 echo.
 echo [3/3] Uploading data and images to Google Sheet...
@@ -41,4 +42,5 @@ echo.
 echo ============================================
 echo  Done!
 echo ============================================
-pause
+rem Uncomment the line below when debugging to keep the window open
+rem pause

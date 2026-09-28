@@ -41,6 +41,7 @@ import base64
 import argparse
 import concurrent.futures
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 
 import requests
 import cv2
@@ -179,6 +180,63 @@ def _check_config():
         )
 
 
+class _VisibleText(HTMLParser):
+    """Collects a page's <title> and visible text, skipping <script>/<style>."""
+    def __init__(self):
+        super().__init__()
+        self.title, self.parts, self._skip, self._in_title = '', [], 0, False
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ('script', 'style'):
+            self._skip += 1
+        elif tag == 'title':
+            self._in_title = True
+
+    def handle_endtag(self, tag):
+        if tag in ('script', 'style') and self._skip:
+            self._skip -= 1
+        elif tag == 'title':
+            self._in_title = False
+
+    def handle_data(self, data):
+        if self._in_title:
+            self.title += data
+        elif not self._skip and data.strip():
+            self.parts.append(' '.join(data.split()))
+
+
+def _google_message(resp, limit=300):
+    """
+    Best-effort human-readable reason from a failed Apps Script response.
+
+    Google answers failures with a full HTML page (script exceptions, quota
+    errors like "There are too many scripts running simultaneously…", 500
+    "Google Docs encountered an error", Drive 404s), localized to the account's
+    language and led by a large <script> blob — so the first N chars of the
+    body are useless. Pull out the title and visible text instead. JSON bodies
+    return their 'error' field.
+    """
+    text = (resp.text or '').strip()
+    if not text:
+        return '(empty response)'
+    try:
+        data = resp.json()
+        if isinstance(data, dict) and data.get('error'):
+            return str(data['error'])[:limit]
+    except ValueError:
+        pass
+    p = _VisibleText()
+    try:
+        p.feed(text)
+    except Exception:
+        return text[:limit]
+    title = ' '.join(p.title.split())
+    msg = ' '.join(p.parts)
+    if title and not msg.startswith(title):
+        msg = f"{title}: {msg}" if msg else title
+    return (msg or text)[:limit]
+
+
 def _parse_response(resp, method):
     """Parse JSON from a response, printing helpful diagnostics on failure."""
     text = resp.text.strip()
@@ -186,6 +244,11 @@ def _parse_response(resp, method):
     if not text:
         print(f"ERROR: {method} returned an empty response (HTTP {resp.status_code}).")
         print("Fix: Apps Script -> Deploy -> Manage deployments -> edit -> save new version.")
+        sys.exit(1)
+
+    if resp.status_code >= 400:
+        print(f"ERROR: {method} failed (HTTP {resp.status_code}).")
+        print(f"Google says: {_google_message(resp)}")
         sys.exit(1)
 
     if 'accounts.google.com' in text or 'signin' in text[:200].lower():
@@ -199,8 +262,7 @@ def _parse_response(resp, method):
         return resp.json()
     except Exception:
         print(f"ERROR: {method} returned non-JSON (HTTP {resp.status_code}).")
-        print("First 500 chars of response:")
-        print(text[:500])
+        print(f"Google says: {_google_message(resp)}")
         print()
         print("Common causes:")
         print("  - Script has not been deployed (Deploy -> New deployment)")
@@ -224,16 +286,19 @@ def _request_with_retry(method, **kwargs):
     for attempt in range(1, TRANSIENT_RETRIES + 1):
         try:
             resp = requests.request(method, WEB_APP_URL, **kwargs)
-        except requests.exceptions.RequestException:
+            reason = None
+        except requests.exceptions.RequestException as e:
             if attempt == TRANSIENT_RETRIES:
                 raise
-            resp = None
+            resp, reason = None, f"{type(e).__name__}: {e}"
         if resp is not None and not _is_transient_failure(resp):
             return resp
         if attempt < TRANSIENT_RETRIES:
             wait = TRANSIENT_BACKOFF * attempt
+            if reason is None:
+                reason = f"HTTP {resp.status_code}: {_google_message(resp, limit=150)}"
             print(f"  (Google Apps Script hiccup, retrying in {wait}s — "
-                  f"attempt {attempt}/{TRANSIENT_RETRIES}) …")
+                  f"attempt {attempt}/{TRANSIENT_RETRIES}) — {reason}")
             time.sleep(wait)
     return resp
 
@@ -246,7 +311,6 @@ def fetch_system_list(sheet_name, with_values=False):
     """
     _check_config()
     resp = _request_with_retry('GET', params={'token': SECRET_TOKEN, 'sheet': sheet_name}, timeout=30)
-    resp.raise_for_status()
     data = _parse_response(resp, 'GET')
     if 'error' in data:
         sys.exit(f"Apps Script returned error: {data['error']}")
@@ -267,7 +331,6 @@ def post_updates(systems_payload, sheet_name):
         'systems': systems_payload,
     }
     resp = _request_with_retry('POST', json=body, timeout=120)
-    resp.raise_for_status()
     return _parse_response(resp, 'POST')
 
 
@@ -278,16 +341,21 @@ def set_sheet_status(message, sheet_name):
 
     Passes set_status=message to the Apps Script endpoint, which writes the
     text into STATUS_ROW/STATUS_COL with a yellow background (non-empty) or
-    clears the cell entirely (empty string).  Errors are silently ignored so
+    clears the cell entirely (empty string).  Failures only print a warning so
     a network hiccup never aborts the main workflow.
     """
     _check_config()
     body = {'token': SECRET_TOKEN, 'sheet': sheet_name, 'set_status': message}
     try:
         resp = _request_with_retry('POST', json=body, timeout=15)
-        resp.raise_for_status()
-    except Exception:
-        pass
+        try:
+            ok = resp.status_code < 400 and resp.json().get('ok')
+        except ValueError:
+            ok = False
+        if not ok:
+            print(f"  (warning: could not update status cell — HTTP {resp.status_code}: {_google_message(resp)})")
+    except Exception as e:
+        print(f"  (warning: could not update status cell — {type(e).__name__}: {e})")
 
 
 # ── Sync input.txt from sheet ─────────────────────────────────────────────────

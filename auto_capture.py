@@ -431,6 +431,59 @@ def load_previous_capture(output_dir, current_time):
     print(f"  Loaded {len(previous_data)} systems from previous capture")
     return previous_data, is_same_cycle
 
+
+CP_KEYS = {'Undermining': 'undermining_points', 'Reinforcing': 'reinforcing_points'}
+
+
+def confirm_flagged_values(flagged, collected_systems, ocr, output_files):
+    """
+    Ask the user to check each flagged value in game and type the correct number
+    (Enter keeps the OCR value). Corrected systems are rewritten in output_files,
+    so the sheet upload and the next run's comparison use the fixed numbers.
+
+    Args:
+        flagged: List of (system_name, 'Undermining'|'Reinforcing', previous_value)
+    """
+    print("\n" + "=" * 80)
+    print(f"PLEASE CHECK {len(flagged)} VALUE(S) IN GAME")
+    print("=" * 80)
+    print("Open each system on the galaxy map and compare the value below.")
+    print("Type the correct number, or just press Enter to keep the value that was read.\n")
+
+    changed = set()
+    for i, (system, kind, prev) in enumerate(flagged, 1):
+        info = collected_systems[system]
+        key = CP_KEYS[kind]
+        read = info[key]
+        # Same figure the warning tables show: change for decreases, ratio for large increases
+        delta = f"{read - prev:+,}" if read < prev else f"{read / prev:.1f}x"
+        while True:
+            answer = input(f"[{i}/{len(flagged)}] {system} - {kind}: read {read:,} "
+                           f"(previous {prev:,}, {delta}). Correct value: ").strip()
+            if not answer:
+                break
+            digits = re.sub(r'[\s,.]', '', answer)   # accept 12,345 / 12.345 / 12 345
+            if digits.isdigit():
+                info[key] = int(digits)
+                changed.add(system)
+                break
+            print("  Not a number - type digits only, or press Enter to keep the value.")
+
+    if not changed:
+        print("\nNo values changed.")
+        return
+
+    for path in output_files:
+        with open(path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        for n, line in enumerate(lines):
+            name = line.split('\t', 1)[0]
+            if name in changed:
+                lines[n] = ocr.format_for_excel(collected_systems[name], original_system_name=name) + '\n'
+        with open(path, 'w', encoding='utf-8') as f:
+            f.writelines(lines)
+    print(f"\nCorrected {len(changed)} system(s): {', '.join(sorted(changed))}")
+
 # Loaded from config — see config.py for full documentation and examples.
 _WRITE_VK_OVERRIDES = config.WRITE_VK_OVERRIDES
 
@@ -645,7 +698,8 @@ def main():
         '--debug-pause',
         action='store_true',
         help='Pause for a keypress before exiting, so the console stays visible when '
-             'launched from a script. Off by default; enable when troubleshooting. '
+             'launched from a script, and ask for the correct number of every value '
+             'the cycle validation flags. Off by default; enable when troubleshooting. '
              'Also enabled by setting DEBUG_PAUSE = True in credentials.py.'
     )
     args = parser.parse_args()
@@ -951,6 +1005,7 @@ def main():
         print(f"Data timestamp: {data_age_line}")
     print("=" * 80)
 
+    flagged = []   # values the cycle validation below doesn't trust
     if collected_systems:
         if data_age_line:
             print(f"\n{data_age_line}")
@@ -1028,6 +1083,11 @@ def main():
                             'ratio': r_ratio
                         })
 
+            flagged = sorted(
+                [(v['system'], 'Undermining', v['prev_u']) for v in violations if v['u_decreased']]
+                + [(v['system'], 'Reinforcing', v['prev_r']) for v in violations if v['r_decreased']]
+                + [(v['system'], v['type'], v['prev']) for v in large_increases])
+
             if violations:
                 print(f"\nWARNING: {len(violations)} system(s) with DECREASED CP (possible OCR errors):\n")
                 print(f"{'System Name':<40} {'Type':<15} {'Previous':<12} {'Current':<12} {'Change'}")
@@ -1076,6 +1136,8 @@ def main():
     play_success_sound()
 
     if debug_pause:
+        if flagged:
+            confirm_flagged_values(flagged, collected_systems, ocr, [main_output_file, archive_output_file])
         input("\nPress Enter to continue...")
 
 if __name__ == "__main__":

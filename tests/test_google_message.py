@@ -51,6 +51,15 @@ def test_empty_and_truncation():
     assert len(u._google_message(_resp('<p>' + 'x' * 1000 + '</p>'))) == 300
 
 
+def test_bounced_echo_is_transient():
+    ok = _resp('{"updated":10}', ctype='application/json')
+    ok.history = [_resp('', 302)]                                   # /exec → echo
+    bounced = _resp('{"error":"Unauthorized"}', ctype='application/json')
+    bounced.history = [_resp('', 302), _resp('', 302), _resp('', 302)]  # /exec → echo → /exec → echo
+    assert not u._is_transient_failure(ok)
+    assert u._is_transient_failure(bounced)
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):

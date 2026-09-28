@@ -91,6 +91,12 @@ UPLOAD_CONCURRENCY = 4
 TRANSIENT_RETRIES  = 6
 TRANSIENT_BACKOFF  = 3   # seconds; multiplied by attempt number
 
+# The echo hop regularly takes 15–30 s even when it succeeds, and Google gives up on it by
+# itself after ~30 s (→ 404). A shorter client timeout turns a slow success into a retry
+# that re-runs the whole script, so stay well above that.
+REQUEST_TIMEOUT = 60   # seconds; POST batches get UPLOAD_TIMEOUT
+UPLOAD_TIMEOUT  = 120
+
 
 # ── Capture data loading ───────────────────────────────────────────────────────
 
@@ -275,6 +281,11 @@ def _is_transient_failure(resp):
     """True if this looks like Google's echo-redirect hiccup rather than a real error."""
     if resp.status_code == 404:
         return True
+    # A healthy call is exactly one redirect (/exec → echo). When the echo hop stalls, Google
+    # bounces back to /exec instead; requests follows that as a GET *without* the POST body,
+    # so doGet answers "Unauthorized" even though doPost already ran. Never trust that answer.
+    if len(resp.history) > 1:
+        return True
     if "ppConfig" in resp.text[:2000]:   # Google bot-challenge interstitial
         return True
     return False
@@ -295,7 +306,9 @@ def _request_with_retry(method, **kwargs):
             return resp
         if attempt < TRANSIENT_RETRIES:
             wait = TRANSIENT_BACKOFF * attempt
-            if reason is None:
+            if reason is None and len(resp.history) > 1:
+                reason = "result relay bounced back to /exec"
+            elif reason is None:
                 reason = f"HTTP {resp.status_code}: {_google_message(resp, limit=150)}"
             print(f"  (Google Apps Script hiccup, retrying in {wait}s — "
                   f"attempt {attempt}/{TRANSIENT_RETRIES}) — {reason}")
@@ -310,7 +323,7 @@ def fetch_system_list(sheet_name, with_values=False):
     lowercase name → {'um': ..., 'rf': ...} as stored in the sheet right now.
     """
     _check_config()
-    resp = _request_with_retry('GET', params={'token': SECRET_TOKEN, 'sheet': sheet_name}, timeout=30)
+    resp = _request_with_retry('GET', params={'token': SECRET_TOKEN, 'sheet': sheet_name}, timeout=REQUEST_TIMEOUT)
     data = _parse_response(resp, 'GET')
     if 'error' in data:
         sys.exit(f"Apps Script returned error: {data['error']}")
@@ -330,7 +343,7 @@ def post_updates(systems_payload, sheet_name):
         'sheet':   sheet_name,
         'systems': systems_payload,
     }
-    resp = _request_with_retry('POST', json=body, timeout=120)
+    resp = _request_with_retry('POST', json=body, timeout=UPLOAD_TIMEOUT)
     return _parse_response(resp, 'POST')
 
 
@@ -347,7 +360,7 @@ def set_sheet_status(message, sheet_name):
     _check_config()
     body = {'token': SECRET_TOKEN, 'sheet': sheet_name, 'set_status': message}
     try:
-        resp = _request_with_retry('POST', json=body, timeout=15)
+        resp = _request_with_retry('POST', json=body, timeout=REQUEST_TIMEOUT)
         try:
             ok = resp.status_code < 400 and resp.json().get('ok')
         except ValueError:

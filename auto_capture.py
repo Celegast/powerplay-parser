@@ -465,7 +465,6 @@ def _write_text(text, interval=0.02):
         for mvk in held:
             user32.keybd_event(mvk, 0, 0, 0)
         user32.keybd_event(vk, 0, 0, 0)
-        time.sleep(interval)
         user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
         for mvk in reversed(held):
             user32.keybd_event(mvk, 0, KEYEVENTF_KEYUP, 0)

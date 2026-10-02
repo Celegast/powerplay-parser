@@ -29,6 +29,7 @@ Options:
   --dry-run            Print what would change without modifying the sheet
   --sheet SHEET        Target a specific sheet tab by exact name (default: "This Cycle N")
   --acquisitions       Shorthand for --sheet Acquisitions --no-images
+  --all                "This Cycle N" and Acquisitions together (sync, clear-status, upload)
 """
 
 import os
@@ -38,8 +39,10 @@ import time
 import glob
 import base64
 import argparse
+import threading
 import concurrent.futures
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 
 import requests
 import cv2
@@ -88,6 +91,18 @@ UPLOAD_CONCURRENCY = 4
 # issue, not a deployment problem. Retrying almost always succeeds within a couple of attempts.
 TRANSIENT_RETRIES  = 6
 TRANSIENT_BACKOFF  = 3   # seconds; multiplied by attempt number
+
+# After a few idle minutes (e.g. while auto_capture.py runs) Google unloads the script, and the
+# first request has to cold-start it — which routinely takes one or two of the retries above.
+# Those first retries are expected, so they get a single quiet "waking up" line instead of the
+# full hiccup diagnostics; only retries beyond this many are reported in detail.
+QUIET_RETRIES = 2
+
+# The echo hop regularly takes 15–30 s even when it succeeds, and Google gives up on it by
+# itself after ~30 s (→ 404). A shorter client timeout turns a slow success into a retry
+# that re-runs the whole script, so stay well above that.
+REQUEST_TIMEOUT = 60   # seconds; POST batches get UPLOAD_TIMEOUT
+UPLOAD_TIMEOUT  = 120
 
 
 # ── Capture data loading ───────────────────────────────────────────────────────
@@ -178,6 +193,63 @@ def _check_config():
         )
 
 
+class _VisibleText(HTMLParser):
+    """Collects a page's <title> and visible text, skipping <script>/<style>."""
+    def __init__(self):
+        super().__init__()
+        self.title, self.parts, self._skip, self._in_title = '', [], 0, False
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ('script', 'style'):
+            self._skip += 1
+        elif tag == 'title':
+            self._in_title = True
+
+    def handle_endtag(self, tag):
+        if tag in ('script', 'style') and self._skip:
+            self._skip -= 1
+        elif tag == 'title':
+            self._in_title = False
+
+    def handle_data(self, data):
+        if self._in_title:
+            self.title += data
+        elif not self._skip and data.strip():
+            self.parts.append(' '.join(data.split()))
+
+
+def _google_message(resp, limit=300):
+    """
+    Best-effort human-readable reason from a failed Apps Script response.
+
+    Google answers failures with a full HTML page (script exceptions, quota
+    errors like "There are too many scripts running simultaneously…", 500
+    "Google Docs encountered an error", Drive 404s), localized to the account's
+    language and led by a large <script> blob — so the first N chars of the
+    body are useless. Pull out the title and visible text instead. JSON bodies
+    return their 'error' field.
+    """
+    text = (resp.text or '').strip()
+    if not text:
+        return '(empty response)'
+    try:
+        data = resp.json()
+        if isinstance(data, dict) and data.get('error'):
+            return str(data['error'])[:limit]
+    except ValueError:
+        pass
+    p = _VisibleText()
+    try:
+        p.feed(text)
+    except Exception:
+        return text[:limit]
+    title = ' '.join(p.title.split())
+    msg = ' '.join(p.parts)
+    if title and not msg.startswith(title):
+        msg = f"{title}: {msg}" if msg else title
+    return (msg or text)[:limit]
+
+
 def _parse_response(resp, method):
     """Parse JSON from a response, printing helpful diagnostics on failure."""
     text = resp.text.strip()
@@ -185,6 +257,11 @@ def _parse_response(resp, method):
     if not text:
         print(f"ERROR: {method} returned an empty response (HTTP {resp.status_code}).")
         print("Fix: Apps Script -> Deploy -> Manage deployments -> edit -> save new version.")
+        sys.exit(1)
+
+    if resp.status_code >= 400:
+        print(f"ERROR: {method} failed (HTTP {resp.status_code}).")
+        print(f"Google says: {_google_message(resp)}")
         sys.exit(1)
 
     if 'accounts.google.com' in text or 'signin' in text[:200].lower():
@@ -198,8 +275,7 @@ def _parse_response(resp, method):
         return resp.json()
     except Exception:
         print(f"ERROR: {method} returned non-JSON (HTTP {resp.status_code}).")
-        print("First 500 chars of response:")
-        print(text[:500])
+        print(f"Google says: {_google_message(resp)}")
         print()
         print("Common causes:")
         print("  - Script has not been deployed (Deploy -> New deployment)")
@@ -212,6 +288,11 @@ def _is_transient_failure(resp):
     """True if this looks like Google's echo-redirect hiccup rather than a real error."""
     if resp.status_code == 404:
         return True
+    # A healthy call is exactly one redirect (/exec → echo). When the echo hop stalls, Google
+    # bounces back to /exec instead; requests follows that as a GET *without* the POST body,
+    # so doGet answers "Unauthorized" even though doPost already ran. Never trust that answer.
+    if len(resp.history) > 1:
+        return True
     if "ppConfig" in resp.text[:2000]:   # Google bot-challenge interstitial
         return True
     return False
@@ -220,21 +301,59 @@ def _is_transient_failure(resp):
 def _request_with_retry(method, **kwargs):
     """requests.request() with retries for the transient Apps Script 404/challenge glitch."""
     resp = None
+    announced_wake = False
     for attempt in range(1, TRANSIENT_RETRIES + 1):
         try:
             resp = requests.request(method, WEB_APP_URL, **kwargs)
-        except requests.exceptions.RequestException:
+            reason = None
+        except requests.exceptions.RequestException as e:
             if attempt == TRANSIENT_RETRIES:
                 raise
-            resp = None
+            resp, reason = None, f"{type(e).__name__}: {e}"
         if resp is not None and not _is_transient_failure(resp):
             return resp
         if attempt < TRANSIENT_RETRIES:
             wait = TRANSIENT_BACKOFF * attempt
-            print(f"  (Google Apps Script hiccup, retrying in {wait}s — "
-                  f"attempt {attempt}/{TRANSIENT_RETRIES}) …")
+            if reason is None and len(resp.history) > 1:
+                reason = "result relay bounced back to /exec"
+            elif reason is None:
+                reason = f"HTTP {resp.status_code}: {_google_message(resp, limit=150)}"
+            if attempt <= QUIET_RETRIES:
+                # Most likely a cold start — expected, so keep it to one calm line.
+                if not announced_wake:
+                    print("  (Google Apps Script is waking up — retrying…)")
+                    announced_wake = True
+            else:
+                print(f"  (Google Apps Script hiccup, retrying in {wait}s — "
+                      f"attempt {attempt}/{TRANSIENT_RETRIES}) — {reason}")
             time.sleep(wait)
     return resp
+
+
+def warm_up_apps_script():
+    """Wake the Apps Script deployment with a cheap ping before the real requests.
+
+    Uses ?ping=1, which the script answers without opening the spreadsheet. An older
+    deployment without ping support still gets woken (it just answers with a
+    'Sheet not found' error), so the response content is deliberately ignored.
+    Never raises: a failed warm-up only means the real request does the waking.
+    """
+    _check_config()
+    start = time.monotonic()
+    try:
+        _request_with_retry('GET', params={'token': SECRET_TOKEN, 'ping': '1'},
+                            timeout=REQUEST_TIMEOUT)
+        print(f"  (Google Apps Script ready after {time.monotonic() - start:.0f}s)")
+    except Exception as e:
+        print(f"  (warning: Apps Script warm-up failed — {type(e).__name__}: {e})")
+
+
+def start_warm_up():
+    """Run warm_up_apps_script() in the background; returns the thread to join() later."""
+    print("Waking up Google Apps Script in the background …")
+    t = threading.Thread(target=warm_up_apps_script, name='apps-script-warm-up', daemon=True)
+    t.start()
+    return t
 
 
 def fetch_system_list(sheet_name, with_values=False):
@@ -244,8 +363,7 @@ def fetch_system_list(sheet_name, with_values=False):
     lowercase name → {'um': ..., 'rf': ...} as stored in the sheet right now.
     """
     _check_config()
-    resp = _request_with_retry('GET', params={'token': SECRET_TOKEN, 'sheet': sheet_name}, timeout=30)
-    resp.raise_for_status()
+    resp = _request_with_retry('GET', params={'token': SECRET_TOKEN, 'sheet': sheet_name}, timeout=REQUEST_TIMEOUT)
     data = _parse_response(resp, 'GET')
     if 'error' in data:
         sys.exit(f"Apps Script returned error: {data['error']}")
@@ -265,8 +383,7 @@ def post_updates(systems_payload, sheet_name):
         'sheet':   sheet_name,
         'systems': systems_payload,
     }
-    resp = _request_with_retry('POST', json=body, timeout=120)
-    resp.raise_for_status()
+    resp = _request_with_retry('POST', json=body, timeout=UPLOAD_TIMEOUT)
     return _parse_response(resp, 'POST')
 
 
@@ -277,31 +394,40 @@ def set_sheet_status(message, sheet_name):
 
     Passes set_status=message to the Apps Script endpoint, which writes the
     text into STATUS_ROW/STATUS_COL with a yellow background (non-empty) or
-    clears the cell entirely (empty string).  Errors are silently ignored so
+    clears the cell entirely (empty string).  Failures only print a warning so
     a network hiccup never aborts the main workflow.
     """
     _check_config()
     body = {'token': SECRET_TOKEN, 'sheet': sheet_name, 'set_status': message}
     try:
-        resp = _request_with_retry('POST', json=body, timeout=15)
-        resp.raise_for_status()
-    except Exception:
-        pass
+        resp = _request_with_retry('POST', json=body, timeout=REQUEST_TIMEOUT)
+        try:
+            ok = resp.status_code < 400 and resp.json().get('ok')
+        except ValueError:
+            ok = False
+        if not ok:
+            print(f"  (warning: could not update status cell — HTTP {resp.status_code}: {_google_message(resp)})")
+    except Exception as e:
+        print(f"  (warning: could not update status cell — {type(e).__name__}: {e})")
 
 
 # ── Sync input.txt from sheet ─────────────────────────────────────────────────
 
-def sync_input_txt(sheet_name, input_file='input.txt'):
+def sync_input_txt(sheet_names, input_file='input.txt'):
     """
-    Read the current system list from the Google Sheet and write it to input.txt
-    so that auto_capture.py captures exactly the systems the sheet tracks.
+    Read the current system list from each Google Sheet and write them to input.txt
+    so that auto_capture.py captures exactly the systems the sheets track.
     """
-    print(f"Setting update indicator in '{sheet_name}' …")
-    set_sheet_status("⏳ Update in progress…", sheet_name)
+    systems = []
+    for sheet_name in sheet_names:
+        print(f"Setting update indicator in '{sheet_name}' …")
+        set_sheet_status("⏳ Update in progress…", sheet_name)
 
-    print(f"Fetching system list from '{sheet_name}' …")
-    systems = fetch_system_list(sheet_name)
-    print(f"  {len(systems)} systems")
+        print(f"Fetching system list from '{sheet_name}' …")
+        sheet_systems = fetch_system_list(sheet_name)
+        print(f"  {len(sheet_systems)} systems")
+        systems += sheet_systems
+    systems = list(dict.fromkeys(systems))   # a system on both sheets is captured once
     with open(input_file, 'w', encoding='utf-8') as f:
         for name in systems:
             f.write(name + '\n')
@@ -522,6 +648,13 @@ def main():
         help='Shorthand for --sheet Acquisitions --no-images'
     )
     parser.add_argument(
+        '--all',
+        action='store_true',
+        help='"This Cycle N" and Acquisitions together (overrides --sheet/--acquisitions): '
+             '--sync-input writes both system lists, --clear-status clears both, '
+             'and an upload updates both sheets from the same capture file'
+    )
+    parser.add_argument(
         '--debug-pause',
         action='store_true',
         help='Pause for a keypress after the upload finishes, so the console stays visible '
@@ -539,16 +672,26 @@ def main():
     else:
         sheet_name = DEFAULT_SHEET_NAME
 
-    # Acquisitions sheet never has CP bar images
-    no_images = args.no_images or args.acquisitions
+    # (sheet, update_images) pairs; the Acquisitions sheet never has CP bar images
+    if args.all:
+        targets = [(DEFAULT_SHEET_NAME, not args.no_images), (ACQUISITIONS_SHEET, False)]
+    else:
+        targets = [(sheet_name, not (args.no_images or args.acquisitions))]
+
+    # Wake the (probably idle) Apps Script first, overlapping with local work where there is any,
+    # so the first real request doesn't eat the cold-start retries.
+    warm_up = start_warm_up()
 
     if args.sync_input:
-        sync_input_txt(sheet_name)
+        warm_up.join()
+        sync_input_txt([s for s, _ in targets])
         return
 
     if args.clear_status:
-        print(f"Clearing update indicator in '{sheet_name}' …")
-        set_sheet_status("", sheet_name)
+        warm_up.join()
+        for s, _ in targets:
+            print(f"Clearing update indicator in '{s}' …")
+            set_sheet_status("", s)
         return
 
     system_map     = {}
@@ -563,15 +706,20 @@ def main():
               + (f", timestamp: {data_timestamp}" if data_timestamp else ''))
         print()
 
-    update_sheet(
-        system_map,
-        data_timestamp,
-        sheet_name=sheet_name,
-        update_images=not no_images,
-        images_only=args.images_only,
-        system_filter=args.system,
-        dry_run=args.dry_run,
-    )
+    warm_up.join()
+
+    for n, (s, update_images) in enumerate(targets):
+        if n:
+            print("\n" + "=" * 60 + "\n")
+        update_sheet(
+            system_map,
+            data_timestamp,
+            sheet_name=s,
+            update_images=update_images,
+            images_only=args.images_only,
+            system_filter=args.system,
+            dry_run=args.dry_run,
+        )
 
     if debug_pause:
         input("\nPress Enter to continue...")

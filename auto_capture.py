@@ -431,6 +431,59 @@ def load_previous_capture(output_dir, current_time):
     print(f"  Loaded {len(previous_data)} systems from previous capture")
     return previous_data, is_same_cycle
 
+
+CP_KEYS = {'Undermining': 'undermining_points', 'Reinforcing': 'reinforcing_points'}
+
+
+def confirm_flagged_values(flagged, collected_systems, ocr, output_files):
+    """
+    Ask the user to check each flagged value in game and type the correct number
+    (Enter keeps the OCR value). Corrected systems are rewritten in output_files,
+    so the sheet upload and the next run's comparison use the fixed numbers.
+
+    Args:
+        flagged: List of (system_name, 'Undermining'|'Reinforcing', previous_value)
+    """
+    print("\n" + "=" * 80)
+    print(f"PLEASE CHECK {len(flagged)} VALUE(S) IN GAME")
+    print("=" * 80)
+    print("Open each system on the galaxy map and compare the value below.")
+    print("Type the correct number, or just press Enter to keep the value that was read.\n")
+
+    changed = set()
+    for i, (system, kind, prev) in enumerate(flagged, 1):
+        info = collected_systems[system]
+        key = CP_KEYS[kind]
+        read = info[key]
+        # Same figure the warning tables show: change for decreases, ratio for large increases
+        delta = f"{read - prev:+,}" if read < prev else f"{read / prev:.1f}x"
+        while True:
+            answer = input(f"[{i}/{len(flagged)}] {system} - {kind}: read {read:,} "
+                           f"(previous {prev:,}, {delta}). Correct value: ").strip()
+            if not answer:
+                break
+            digits = re.sub(r'[\s,.]', '', answer)   # accept 12,345 / 12.345 / 12 345
+            if digits.isdigit():
+                info[key] = int(digits)
+                changed.add(system)
+                break
+            print("  Not a number - type digits only, or press Enter to keep the value.")
+
+    if not changed:
+        print("\nNo values changed.")
+        return
+
+    for path in output_files:
+        with open(path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        for n, line in enumerate(lines):
+            name = line.split('\t', 1)[0]
+            if name in changed:
+                lines[n] = ocr.format_for_excel(collected_systems[name], original_system_name=name) + '\n'
+        with open(path, 'w', encoding='utf-8') as f:
+            f.writelines(lines)
+    print(f"\nCorrected {len(changed)} system(s): {', '.join(sorted(changed))}")
+
 # Loaded from config — see config.py for full documentation and examples.
 _WRITE_VK_OVERRIDES = config.WRITE_VK_OVERRIDES
 
@@ -645,7 +698,8 @@ def main():
         '--debug-pause',
         action='store_true',
         help='Pause for a keypress before exiting, so the console stays visible when '
-             'launched from a script. Off by default; enable when troubleshooting. '
+             'launched from a script, and ask for the correct number of every value '
+             'the cycle validation flags. Off by default; enable when troubleshooting. '
              'Also enabled by setting DEBUG_PAUSE = True in credentials.py.'
     )
     args = parser.parse_args()
@@ -738,7 +792,13 @@ def main():
     print("PHASE 1: CAPTURING SCREENSHOTS")
     print("=" * 80)
 
-    screenshot_mapping = {}  # Maps system_name -> screenshot_path
+    # OCR each screenshot in the background as soon as it's saved instead of after
+    # the last one. Capturing a system takes ~7 s and OCR ~2.5 s per panel, so
+    # usually only one tesseract process competes with the game at a time; any
+    # backlog left at the end gets the whole pool.
+    max_workers = os.cpu_count() or 4
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+    ocr_futures = {}  # system_name -> Future of _run_ocr_worker's result
 
     for i, system_name in enumerate(system_names, 1):
         print(f"\n[{i}/{len(system_names)}] Capturing: {system_name}")
@@ -764,7 +824,8 @@ def main():
                 # Save the full screenshot with system name
                 saved_path = f"auto_capture/screenshots/capture_{i:03d}_{safe_name}.png"
                 shutil.move(screenshot_path, saved_path)
-                screenshot_mapping[system_name] = (i, saved_path)
+                ocr_futures[system_name] = executor.submit(
+                    _run_ocr_worker, ocr, i, system_name, saved_path, debug_ocr)
 
                 print(f"  -> [OK] Screenshot saved!")
             else:
@@ -778,7 +839,7 @@ def main():
             time.sleep(0.5)
 
     print("\n" + "=" * 80)
-    print(f"PHASE 1 COMPLETE - CAPTURED {len(screenshot_mapping)}/{len(system_names)} SCREENSHOTS")
+    print(f"PHASE 1 COMPLETE - CAPTURED {len(ocr_futures)}/{len(system_names)} SCREENSHOTS")
     print("=" * 80)
 
     # Play sound to indicate phase transition
@@ -808,28 +869,15 @@ def main():
     collected_systems = {}
     last_data_age = None  # Track data age from most recent screenshot
 
-    # Run OCR for every screenshot in parallel. Tesseract is a single-threaded
-    # external process per call, so spreading calls across as many worker threads
-    # as CPU cores lets that many tesseract processes run at once.
-    items = list(screenshot_mapping.items())
+    # OCR was started during capture; most of it is already done. Collect in capture order.
+    finished = sum(f.done() for f in ocr_futures.values())
+    print(f"{finished}/{len(ocr_futures)} already finished during capture, finishing the rest "
+          f"across up to {max_workers} parallel worker(s)...")
     results = []
-    if items:
-        max_workers = min(len(items), os.cpu_count() or 4)
-        print(f"Running OCR across {max_workers} parallel worker(s) "
-              f"({os.cpu_count() or '?'} CPU core(s) detected)...")
-
-        results = [None] * len(items)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_idx = {
-                executor.submit(_run_ocr_worker, ocr, i, system_name, screenshot_path, debug_ocr): idx
-                for idx, (system_name, (i, screenshot_path)) in enumerate(items)
-            }
-            done = 0
-            for future in concurrent.futures.as_completed(future_to_idx):
-                idx = future_to_idx[future]
-                results[idx] = future.result()
-                done += 1
-                print(f"  OCR done [{done}/{len(items)}]: {results[idx]['system_name']}")
+    for done, (system_name, future) in enumerate(ocr_futures.items(), 1):
+        results.append(future.result())
+        print(f"  OCR done [{done}/{len(ocr_futures)}]: {system_name}")
+    executor.shutdown()
 
     # Apply results in original capture order so output files and last_data_age
     # come out identical to a sequential run, regardless of which worker finished first.
@@ -951,6 +999,7 @@ def main():
         print(f"Data timestamp: {data_age_line}")
     print("=" * 80)
 
+    flagged = []   # values the cycle validation below doesn't trust
     if collected_systems:
         if data_age_line:
             print(f"\n{data_age_line}")
@@ -1028,6 +1077,11 @@ def main():
                             'ratio': r_ratio
                         })
 
+            flagged = sorted(
+                [(v['system'], 'Undermining', v['prev_u']) for v in violations if v['u_decreased']]
+                + [(v['system'], 'Reinforcing', v['prev_r']) for v in violations if v['r_decreased']]
+                + [(v['system'], v['type'], v['prev']) for v in large_increases])
+
             if violations:
                 print(f"\nWARNING: {len(violations)} system(s) with DECREASED CP (possible OCR errors):\n")
                 print(f"{'System Name':<40} {'Type':<15} {'Previous':<12} {'Current':<12} {'Change'}")
@@ -1076,6 +1130,8 @@ def main():
     play_success_sound()
 
     if debug_pause:
+        if flagged:
+            confirm_flagged_values(flagged, collected_systems, ocr, [main_output_file, archive_output_file])
         input("\nPress Enter to continue...")
 
 if __name__ == "__main__":

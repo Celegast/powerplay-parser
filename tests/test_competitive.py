@@ -37,7 +37,6 @@ def main():
             for power in info['powers']:
                 print(f"    {power['rank']}. {power['name']}: {power['score']:,}")
             print(f"\n  Your Power: '{info['your_power']}'")
-            print(f"  Your Rank: '{info['your_rank']}'")
             print(f"\n  Controlling Power (1st): '{info['controlling_power']}'")
             print(f"  Opposing Power (2nd): '{info['opposing_power']}'")
 

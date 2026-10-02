@@ -45,10 +45,10 @@ def main():
     print("    Undermining = Undermining points")
     print("    Reinforcement = Reinforcing points")
     print("\n  Competitive states:")
-    print("    Power = 1st ranked power name")
-    print("    State = 2nd ranked power name")
-    print("    Undermining = 2nd power control points")
-    print("    Reinforcement = 1st power control points")
+    print("    Power = our power")
+    print("    State = other power with the highest control score")
+    print("    Undermining = that power's control score")
+    print("    Reinforcement = our power's control score")
     print("=" * 80)
 
 if __name__ == "__main__":

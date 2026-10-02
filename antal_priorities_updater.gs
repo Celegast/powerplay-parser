@@ -16,6 +16,8 @@
  * The script exposes two endpoints:
  *   GET  ?token=...&sheet=...            → returns current system list (for --sync-input)
  *                                          plus current UM/RF per system (for change detection)
+ *   GET  ?token=...&ping=1               → returns {ok:true} without opening the spreadsheet;
+ *                                          used to wake the script up before real requests
  *   POST (JSON body, systems=[...])      → updates UM, RF, timestamp, and CP bar images
  *   POST (JSON body, set_status="...")   → writes/clears the update-status indicator cell
  */
@@ -41,6 +43,10 @@ function doGet(e) {
   if ((e.parameter.token || '') !== SECRET_TOKEN) {
     return jsonResponse({error: 'Unauthorized'});
   }
+
+  // Warm-up ping: answer immediately so the Python side can wake an idle (cold) script
+  // without paying for a spreadsheet read.
+  if (e.parameter.ping) return jsonResponse({ok: true});
 
   var sheetName = e.parameter.sheet || '';
   var sheet = getSheet(sheetName);

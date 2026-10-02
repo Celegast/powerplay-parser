@@ -39,6 +39,7 @@ import time
 import glob
 import base64
 import argparse
+import threading
 import concurrent.futures
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -90,6 +91,12 @@ UPLOAD_CONCURRENCY = 4
 # issue, not a deployment problem. Retrying almost always succeeds within a couple of attempts.
 TRANSIENT_RETRIES  = 6
 TRANSIENT_BACKOFF  = 3   # seconds; multiplied by attempt number
+
+# After a few idle minutes (e.g. while auto_capture.py runs) Google unloads the script, and the
+# first request has to cold-start it — which routinely takes one or two of the retries above.
+# Those first retries are expected, so they get a single quiet "waking up" line instead of the
+# full hiccup diagnostics; only retries beyond this many are reported in detail.
+QUIET_RETRIES = 2
 
 # The echo hop regularly takes 15–30 s even when it succeeds, and Google gives up on it by
 # itself after ~30 s (→ 404). A shorter client timeout turns a slow success into a retry
@@ -294,6 +301,7 @@ def _is_transient_failure(resp):
 def _request_with_retry(method, **kwargs):
     """requests.request() with retries for the transient Apps Script 404/challenge glitch."""
     resp = None
+    announced_wake = False
     for attempt in range(1, TRANSIENT_RETRIES + 1):
         try:
             resp = requests.request(method, WEB_APP_URL, **kwargs)
@@ -310,10 +318,42 @@ def _request_with_retry(method, **kwargs):
                 reason = "result relay bounced back to /exec"
             elif reason is None:
                 reason = f"HTTP {resp.status_code}: {_google_message(resp, limit=150)}"
-            print(f"  (Google Apps Script hiccup, retrying in {wait}s — "
-                  f"attempt {attempt}/{TRANSIENT_RETRIES}) — {reason}")
+            if attempt <= QUIET_RETRIES:
+                # Most likely a cold start — expected, so keep it to one calm line.
+                if not announced_wake:
+                    print("  (Google Apps Script is waking up — retrying…)")
+                    announced_wake = True
+            else:
+                print(f"  (Google Apps Script hiccup, retrying in {wait}s — "
+                      f"attempt {attempt}/{TRANSIENT_RETRIES}) — {reason}")
             time.sleep(wait)
     return resp
+
+
+def warm_up_apps_script():
+    """Wake the Apps Script deployment with a cheap ping before the real requests.
+
+    Uses ?ping=1, which the script answers without opening the spreadsheet. An older
+    deployment without ping support still gets woken (it just answers with a
+    'Sheet not found' error), so the response content is deliberately ignored.
+    Never raises: a failed warm-up only means the real request does the waking.
+    """
+    _check_config()
+    start = time.monotonic()
+    try:
+        _request_with_retry('GET', params={'token': SECRET_TOKEN, 'ping': '1'},
+                            timeout=REQUEST_TIMEOUT)
+        print(f"  (Google Apps Script ready after {time.monotonic() - start:.0f}s)")
+    except Exception as e:
+        print(f"  (warning: Apps Script warm-up failed — {type(e).__name__}: {e})")
+
+
+def start_warm_up():
+    """Run warm_up_apps_script() in the background; returns the thread to join() later."""
+    print("Waking up Google Apps Script in the background …")
+    t = threading.Thread(target=warm_up_apps_script, name='apps-script-warm-up', daemon=True)
+    t.start()
+    return t
 
 
 def fetch_system_list(sheet_name, with_values=False):
@@ -638,11 +678,17 @@ def main():
     else:
         targets = [(sheet_name, not (args.no_images or args.acquisitions))]
 
+    # Wake the (probably idle) Apps Script first, overlapping with local work where there is any,
+    # so the first real request doesn't eat the cold-start retries.
+    warm_up = start_warm_up()
+
     if args.sync_input:
+        warm_up.join()
         sync_input_txt([s for s, _ in targets])
         return
 
     if args.clear_status:
+        warm_up.join()
         for s, _ in targets:
             print(f"Clearing update indicator in '{s}' …")
             set_sheet_status("", s)
@@ -659,6 +705,8 @@ def main():
         print(f"  {len(system_map)} systems loaded"
               + (f", timestamp: {data_timestamp}" if data_timestamp else ''))
         print()
+
+    warm_up.join()
 
     for n, (s, update_images) in enumerate(targets):
         if n:

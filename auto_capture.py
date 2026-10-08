@@ -567,6 +567,28 @@ def click_and_paste(x, y, text, debug_index=0):
     time.sleep(random.uniform(0.5, 1.0))
 
 
+def estimate_data_time(samples, tolerance=timedelta(minutes=2)):
+    """
+    Work out when the game's powerplay data was last updated, in UTC.
+
+    samples: [(capture_time_utc, data_age_minutes), ...], one per screenshot.
+    Each sample implies data_time = capture_time - age. The game shows one
+    galaxy-wide "X MINUTES AGO" value, so correct readings all agree to within
+    about a minute, while OCR misreads (e.g. 58 read as 98) land far away.
+    Pick the estimate with the most other estimates within `tolerance` of it,
+    then return the median of that cluster. Times are absolute UTC, so this is
+    independent of the PC's time zone and DST.
+
+    Returns (data_time_utc or None, number_of_samples_rejected_as_outliers).
+    """
+    estimates = sorted(t - timedelta(minutes=age) for t, age in samples if age is not None and age >= 0)
+    if not estimates:
+        return None, 0
+    best = max(estimates, key=lambda e: sum(abs(o - e) <= tolerance for o in estimates))
+    cluster = [e for e in estimates if abs(e - best) <= tolerance]
+    return cluster[len(cluster) // 2], len(estimates) - len(cluster)
+
+
 def _run_ocr_worker(ocr, i, system_name, screenshot_path, debug_ocr_text=False):
     """
     Run the full OCR pipeline for one already-captured screenshot and write its
@@ -799,6 +821,7 @@ def main():
     max_workers = os.cpu_count() or 4
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
     ocr_futures = {}  # system_name -> Future of _run_ocr_worker's result
+    capture_times = {}  # capture index -> UTC time its screenshot was taken
 
     for i, system_name in enumerate(system_names, 1):
         print(f"\n[{i}/{len(system_names)}] Capturing: {system_name}")
@@ -815,9 +838,11 @@ def main():
             # Take screenshot only (no OCR yet)
             print(f"  -> Taking screenshot...")
             screenshot_path = ocr.take_screenshot()
+            shot_time = datetime.now(timezone.utc)   # what the panel's "X MINUTES AGO" is relative to
 
             # Save screenshot with system name
             if screenshot_path:
+                capture_times[i] = shot_time
                 # Sanitize system name for filename (replace invalid chars)
                 safe_name = system_name.replace(' ', '_').replace('/', '-').replace('\\', '-')
 
@@ -868,6 +893,7 @@ def main():
 
     collected_systems = {}
     last_data_age = None  # Track data age from most recent screenshot
+    data_age_samples = []  # (capture_time_utc, data_age_minutes) for every screenshot
 
     # OCR was started during capture; most of it is already done. Collect in capture order.
     finished = sum(f.done() for f in ocr_futures.values())
@@ -901,6 +927,8 @@ def main():
             # Update data_age from each screenshot (keep the last one)
             if info.get('data_age_minutes', -1) >= 0:
                 last_data_age = info['data_age_minutes']
+                if i in capture_times:
+                    data_age_samples.append((capture_times[i], last_data_age))
 
             # Check if valid
             if ocr.is_valid_powerplay_data(info):
@@ -972,12 +1000,16 @@ def main():
             # Keep the original screenshot for debugging errors
 
     # Update output files with data timestamp on separate line above header
-    if last_data_age is not None and last_data_age >= 0:
-        # Calculate actual timestamp from current time minus data age
+    # Each screenshot's age is relative to when *it* was taken (not to now, which is
+    # minutes later after OCR), and one OCR misread must not skew the result — so
+    # combine every screenshot's reading and discard outliers.
+    data_time, rejected = estimate_data_time(data_age_samples)
+    if data_time is None and last_data_age is not None and last_data_age >= 0:
         data_time = datetime.now(timezone.utc) - timedelta(minutes=last_data_age)
-        data_age_line = data_time.strftime("%Y-%m-%d %H:%M UTC")
-    else:
-        data_age_line = None
+    if rejected:
+        print(f"Data age: ignored {rejected} of {len(data_age_samples)} screenshot reading(s) "
+              f"that disagreed with the rest (likely OCR misreads)")
+    data_age_line = data_time.strftime("%Y-%m-%d %H:%M UTC") if data_time else None
 
     # Rewrite the files with data_age line above header
     for output_file in [main_output_file, archive_output_file]:
